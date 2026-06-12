@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VMAF JSON output",
+  "description": "libvmaf log_fmt=json output. Top-level structure is stable; metrics inside frames vary by model/feature configuration.",
+  "type": "object",
+  "required": ["version", "fps", "frames", "pooled_metrics"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "libvmaf version hash"
+    },
+    "fps": {
+      "type": "number",
+      "description": "VMAF computation speed in frames per second. Unrelated to the video's framerate."
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["frameNum", "metrics"],
+        "properties": {
+          "frameNum": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "metrics": {
+            "type": "object",
+            "description": "Metric names and values vary by model/feature. At least one VMAF score is present.",
+            "properties": {
+              "vmaf":       { "type": "number", "description": "VMAF score (0-100), default model" },
+              "vmaf_hd":    { "type": "number", "description": "VMAF HD model score" },
+              "vmaf_hd_neg":    { "type": "number", "description": "VMAF HD NEG model score" },
+              "vmaf_hd_phone":  { "type": "number", "description": "VMAF HD phone model score" },
+              "integer_adm2":       { "type": "number" },
+              "integer_adm_scale0": { "type": "number" },
+              "integer_adm_scale1": { "type": "number" },
+              "integer_adm_scale2": { "type": "number" },
+              "integer_adm_scale3": { "type": "number" },
+              "integer_vif_scale0": { "type": "number" },
+              "integer_vif_scale1": { "type": "number" },
+              "integer_vif_scale2": { "type": "number" },
+              "integer_vif_scale3": { "type": "number" },
+              "integer_motion":     { "type": "number" },
+              "integer_motion2":    { "type": "number" },
+              "psnr_y":  { "type": "number" },
+              "psnr_cb": { "type": "number" },
+              "psnr_cr": { "type": "number" }
+            },
+            "additionalProperties": {
+              "type": "number",
+              "description": "Any additional float metric (e.g. integer_aim, integer_adm3, integer_motion3, _egl_1 variants, float_ssim, float_ms_ssim, cambi)"
+            }
+          }
+        }
+      }
+    },
+    "pooled_metrics": {
+      "type": "object",
+      "description": "Aggregate stats per metric. Keys mirror frame-level metrics but not all must be present.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["min", "max", "mean", "harmonic_mean"],
+        "properties": {
+          "min":          { "type": "number" },
+          "max":          { "type": "number" },
+          "mean":         { "type": "number" },
+          "harmonic_mean": { "type": "number" }
+        }
+      }
+    },
+    "aggregate_metrics": {
+      "type": "object",
+      "description": "Usually empty; reserved by libvmaf"
+    }
+  }
+}

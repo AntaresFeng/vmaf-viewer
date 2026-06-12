@@ -1,0 +1,16 @@
+# Local media fixtures and generated comparison output.
+videos/
+
+# Generated VMAF logs and extracted frame bundles.
+*_vmaf.json
+*_vmaf_frames/
+**/*_vmaf_frames/
+
+# Python cache and local virtual environments.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local assistant/tooling state.
+.claude/

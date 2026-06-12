@@ -1,0 +1,6 @@
+jq -r '.frames[] | [.frameNum, (.metrics.vmaf // empty)] | @tsv' LltfPE6aWU8-avc_vmaf.json \
+| awk -v th=0.1 '$2 != "" && $2+0 < th' \
+| sort -k1,1n \
+| head -n 20
+
+| wc -l
