@@ -14,3 +14,4 @@ venv/
 
 # Local assistant/tooling state.
 .claude/
+.worktrees/
