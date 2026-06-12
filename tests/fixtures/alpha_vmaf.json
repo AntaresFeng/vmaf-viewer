@@ -1,0 +1,15 @@
+{
+  "version": "fixture",
+  "fps": 1200.0,
+  "frames": [
+    {"frameNum": 0, "metrics": {"vmaf": 97.0, "integer_motion": 1.0}},
+    {"frameNum": 1, "metrics": {"vmaf": 96.0, "integer_motion": 1.5}},
+    {"frameNum": 2, "metrics": {"vmaf": 90.0, "integer_motion": 2.0}},
+    {"frameNum": 3, "metrics": {"vmaf": 80.0, "integer_motion": 2.5}},
+    {"frameNum": 4, "metrics": {"vmaf": 70.0, "integer_motion": 3.0}}
+  ],
+  "pooled_metrics": {
+    "vmaf": {"min": 70.0, "max": 97.0, "mean": 86.6, "harmonic_mean": 85.0}
+  },
+  "aggregate_metrics": {}
+}
