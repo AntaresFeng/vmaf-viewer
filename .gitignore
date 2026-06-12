@@ -15,3 +15,5 @@ venv/
 # Local assistant/tooling state.
 .claude/
 .worktrees/
+.uv-cache/
+.superpowers/
