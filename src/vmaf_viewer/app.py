@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from bisect import bisect_left, bisect_right
 from pathlib import Path
 
 import uvicorn
@@ -11,7 +12,8 @@ from pydantic import BaseModel, Field
 
 from .cache import VmafCache
 from .compare import compare_files
-from .models import FileRecord
+from .models import FileRecord, ParsedVmaf
+from .parser import VmafParseError
 from .scanner import scan_vmaf_files
 from .stats import downsample_series
 
@@ -22,7 +24,7 @@ class CompareRequest(BaseModel):
     file_ids: list[str]
     metric: str | None = None
     thresholds: list[float] = Field(default_factory=lambda: DEFAULT_THRESHOLDS.copy())
-    max_points: int = 2000
+    max_points: int = Field(default=2000, ge=2, le=100000)
 
 
 class SeriesRequest(BaseModel):
@@ -30,7 +32,7 @@ class SeriesRequest(BaseModel):
     metrics: list[str]
     start: int = 0
     end: int | None = None
-    max_points: int = 2000
+    max_points: int = Field(default=2000, ge=2, le=100000)
 
 
 class AppState:
@@ -65,6 +67,15 @@ def _file_api(record: FileRecord, total_frames: int | None = None, primary_metri
     return item
 
 
+def _parsed_or_http_error(cache: VmafCache, record: FileRecord) -> ParsedVmaf:
+    try:
+        return cache.get(record)
+    except VmafParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail=f"Unable to read {record.relative_path}") from exc
+
+
 def create_app(data_dir: Path | None = None) -> FastAPI:
     state = AppState(data_dir or _default_data_dir())
     app = FastAPI(title="VMAF JSON Viewer")
@@ -75,7 +86,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(static_dir / "index.html")
+        index_path = static_dir / "index.html"
+        if not index_path.exists():
+            raise HTTPException(status_code=404, detail="Viewer frontend is not available yet.")
+        return FileResponse(index_path)
 
     @app.get("/api/files")
     def api_files() -> dict:
@@ -95,13 +109,17 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 metric=request.metric,
                 max_points=request.max_points,
             )
+        except VmafParseError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/file/{file_id}/metrics")
     def api_metrics(file_id: str) -> dict:
         record = state.selected_records([file_id])[0]
-        parsed = state.cache.get(record)
+        parsed = _parsed_or_http_error(state.cache, record)
         return {
             "file": _file_api(record, parsed.total_frames, parsed.primary_metric),
             "metrics": list(parsed.metrics),
@@ -121,9 +139,16 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         files: list[dict] = []
 
         for record in records:
-            parsed = state.cache.get(record)
+            parsed = _parsed_or_http_error(state.cache, record)
             files.append(_file_api(record, parsed.total_frames, parsed.primary_metric))
             metric_series: dict[str, dict[str, list[list[float]]]] = {}
+            start_index = bisect_left(parsed.frame_numbers, request.start)
+            stop_index = (
+                len(parsed.frame_numbers)
+                if request.end is None
+                else bisect_right(parsed.frame_numbers, request.end)
+            )
+            frames = parsed.frame_numbers[start_index:stop_index]
 
             for metric_name in request.metrics:
                 if metric_name not in parsed.metrics:
@@ -132,15 +157,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                         detail=f"{record.name} is missing metric {metric_name}.",
                     )
 
-                frames: list[int] = []
-                values: list[float] = []
-                for frame, value in zip(parsed.frame_numbers, parsed.metrics[metric_name]):
-                    if frame < request.start:
-                        continue
-                    if request.end is not None and frame > request.end:
-                        continue
-                    frames.append(frame)
-                    values.append(value)
+                values = parsed.metrics[metric_name][start_index:stop_index]
 
                 try:
                     points = downsample_series(frames, values, max_points=request.max_points)
