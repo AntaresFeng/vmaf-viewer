@@ -97,6 +97,32 @@ def test_api_series_returns_bad_request_for_invalid_json(tmp_path):
     assert "Invalid JSON" in response.json()["detail"]
 
 
+def test_api_returns_bad_request_for_invalid_frame_num(tmp_path):
+    (tmp_path / "bad_vmaf.json").write_text(
+        '{"frames":[{"frameNum":null,"metrics":{"vmaf":99}}]}',
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
+    file_id = client.get("/api/files").json()["files"][0]["id"]
+
+    metrics_response = client.get(f"/api/file/{file_id}/metrics")
+    series_response = client.post(
+        "/api/series",
+        json={"file_ids": [file_id], "metrics": ["vmaf"], "max_points": 100},
+    )
+    compare_response = client.post(
+        "/api/compare",
+        json={"file_ids": [file_id], "max_points": 100},
+    )
+
+    assert metrics_response.status_code == 400
+    assert series_response.status_code == 400
+    assert compare_response.status_code == 400
+    assert "invalid frameNum" in metrics_response.json()["detail"]
+    assert "invalid frameNum" in series_response.json()["detail"]
+    assert "invalid frameNum" in compare_response.json()["detail"]
+
+
 def test_api_rejects_invalid_max_points():
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
     file_id = client.get("/api/files").json()["files"][0]["id"]

@@ -24,6 +24,14 @@ def select_primary_metric(metric_names: Iterable[str]) -> str | None:
     return None
 
 
+def _frame_num(item: dict, fallback: int, record: FileRecord) -> int:
+    raw = item.get("frameNum", fallback)
+    try:
+        return int(raw)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise VmafParseError(f"{record.relative_path} has invalid frameNum: {raw!r}") from exc
+
+
 def parse_vmaf_file(record: FileRecord) -> ParsedVmaf:
     try:
         data = orjson.loads(record.path.read_bytes())
@@ -42,7 +50,7 @@ def parse_vmaf_file(record: FileRecord) -> ParsedVmaf:
         metrics = item.get("metrics") if isinstance(item, dict) else None
         if not isinstance(metrics, dict):
             continue
-        frame_numbers.append(int(item.get("frameNum", len(frame_numbers))))
+        frame_numbers.append(_frame_num(item, len(frame_numbers), record))
         for name in metrics:
             if name not in metric_seen:
                 metric_seen.add(name)

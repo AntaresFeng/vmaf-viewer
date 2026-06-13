@@ -60,6 +60,15 @@ def test_parse_vmaf_file_rejects_non_object_root_as_missing_frames(tmp_path):
         parse_vmaf_file(record)
 
 
+def test_parse_vmaf_file_rejects_invalid_frame_num(tmp_path):
+    bad = tmp_path / "bad_vmaf.json"
+    bad.write_text('{"frames":[{"frameNum":null,"metrics":{"vmaf":99}}]}', encoding="utf-8")
+    record = scan_vmaf_files(tmp_path)[0]
+
+    with pytest.raises(VmafParseError, match="bad_vmaf.json.*invalid frameNum"):
+        parse_vmaf_file(record)
+
+
 def test_parse_vmaf_file_skips_frames_without_metric_dict(tmp_path):
     fixture = tmp_path / "mixed_vmaf.json"
     fixture.write_text(
