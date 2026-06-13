@@ -18,6 +18,7 @@ const state = {
   activeMetrics: new Set(["primary_vmaf"]),
   thresholds: [...DEFAULT_THRESHOLDS],
   distribution: "histogram",
+  comparisonRequestId: 0,
 };
 
 const elements = {
@@ -94,6 +95,17 @@ function formatNumber(value, digits = 2) {
   return Number.isFinite(number) ? number.toFixed(digits) : "n/a";
 }
 
+function formatThreshold(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return "n/a";
+  }
+  if (Number.isInteger(number)) {
+    return String(number);
+  }
+  return number.toFixed(2).replace(/\.?0+$/, "");
+}
+
 function formatPercent(value, digits = 1) {
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * 100).toFixed(digits)}%` : "n/a";
@@ -132,6 +144,16 @@ function renderMessages(messages, type = "warning") {
   }
 }
 
+function colorForId(id) {
+  const rows = state.comparison ? state.comparison.summary || [] : [];
+  const index = rows.findIndex((row) => row.id === id);
+  return COLORS[(index >= 0 ? index : 0) % COLORS.length];
+}
+
+function colorForRow(row) {
+  return colorForId(row.id);
+}
+
 async function loadFiles() {
   const body = await api("/api/files");
   state.files = body.files || [];
@@ -146,6 +168,8 @@ async function loadFiles() {
 
   if (!state.files.length) {
     renderMessages(["No *_vmaf.json files found."]);
+  } else {
+    renderMessages([]);
   }
 }
 
@@ -178,6 +202,7 @@ function renderFiles() {
         <span>${escapeHtml(formatBytes(file.size))}</span>
       </span>
     `;
+    button.setAttribute("aria-pressed", String(state.selected.has(file.id)));
     button.addEventListener("click", () => {
       if (state.selected.has(file.id)) {
         state.selected.delete(file.id);
@@ -201,6 +226,7 @@ function updateSelectedCount() {
 async function requestComparison() {
   const thresholds = parseThresholds();
   const fileIds = [...state.selected];
+  const requestId = ++state.comparisonRequestId;
 
   if (!fileIds.length) {
     state.comparison = null;
@@ -222,6 +248,9 @@ async function requestComparison() {
         max_points: 2000,
       },
     });
+    if (requestId !== state.comparisonRequestId) {
+      return;
+    }
     state.comparison = body;
 
     const comparedIds = new Set((body.summary || []).map((row) => row.id));
@@ -232,6 +261,9 @@ async function requestComparison() {
     renderControls();
     renderCharts();
   } catch (error) {
+    if (requestId !== state.comparisonRequestId) {
+      return;
+    }
     state.comparison = null;
     renderMessages([error.message || "Unable to compare selected files."], "error");
     renderSummary();
@@ -249,7 +281,7 @@ function thresholdEntry(stats, threshold) {
 function renderSummary() {
   const rows = state.comparison ? state.comparison.summary || [] : [];
   const thresholds = state.thresholds.length ? state.thresholds : DEFAULT_THRESHOLDS;
-  const thresholdHeaders = thresholds.map((threshold) => `<th>&lt;= ${escapeHtml(formatNumber(threshold, 0))}</th>`).join("");
+  const thresholdHeaders = thresholds.map((threshold) => `<th>&lt;= ${escapeHtml(formatThreshold(threshold))}</th>`).join("");
 
   elements.summaryTable.innerHTML = `
     <thead>
@@ -315,13 +347,15 @@ function renderControls() {
 
   const rows = state.comparison ? state.comparison.summary || [] : [];
 
-  rows.forEach((row, index) => {
+  rows.forEach((row) => {
+    const isVisible = !state.hiddenFiles.has(row.id);
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = `chip${state.hiddenFiles.has(row.id) ? " is-muted" : " is-active"}`;
+    chip.className = `chip${isVisible ? " is-active" : " is-muted"}`;
     chip.title = row.name;
+    chip.setAttribute("aria-pressed", String(isVisible));
     chip.innerHTML = `
-      <span class="swatch" style="background:${COLORS[index % COLORS.length]}"></span>
+      <span class="swatch" style="background:${colorForRow(row)}"></span>
       <span>${escapeHtml(row.name)}</span>
     `;
     chip.addEventListener("click", () => {
@@ -339,10 +373,9 @@ function renderControls() {
   const metricChip = document.createElement("button");
   metricChip.type = "button";
   metricChip.className = "chip is-active";
+  metricChip.disabled = true;
+  metricChip.setAttribute("aria-disabled", "true");
   metricChip.textContent = "Primary VMAF";
-  metricChip.addEventListener("click", () => {
-    state.activeMetrics.add("primary_vmaf");
-  });
   elements.metricToggles.appendChild(metricChip);
 }
 
@@ -355,10 +388,10 @@ function visibleRows() {
 
 function referenceLines() {
   return state.thresholds.map((threshold) => ({
-    name: `${formatNumber(threshold, 0)}`,
+    name: formatThreshold(threshold),
     yAxis: threshold,
     label: {
-      formatter: `${formatNumber(threshold, 0)}`,
+      formatter: formatThreshold(threshold),
       color: "#667064",
     },
     lineStyle: {
@@ -426,6 +459,7 @@ function emptyChart(chart, text) {
 function lineSeries(rows) {
   return rows.map((row, index) => {
     const series = state.comparison.series[row.id] || {};
+    const color = colorForRow(row);
     return {
       name: row.name,
       type: "line",
@@ -433,7 +467,8 @@ function lineSeries(rows) {
       smooth: false,
       sampling: "lttb",
       data: series.points || [],
-      lineStyle: { width: 1.6 },
+      lineStyle: { width: 1.6, color },
+      itemStyle: { color },
       emphasis: { focus: "series" },
       markLine: index === 0 ? { silent: true, symbol: "none", data: referenceLines() } : undefined,
     };
@@ -498,7 +533,7 @@ function renderDistributionCharts() {
   }
 
   const firstHistogram = state.comparison.histogram[rows[0].id] || [];
-  const labels = firstHistogram.map((bucket) => `${formatNumber(bucket.start, 0)}-${formatNumber(bucket.end, 0)}`);
+  const labels = firstHistogram.map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
 
   charts.histogram.setOption(
     {
@@ -522,6 +557,7 @@ function renderDistributionCharts() {
         name: row.name,
         type: "bar",
         barMaxWidth: 9,
+        itemStyle: { color: colorForRow(row) },
         data: (state.comparison.histogram[row.id] || []).map((bucket) => bucket.count),
       })),
     },
@@ -560,7 +596,8 @@ function renderDistributionCharts() {
         showSymbol: false,
         step: "end",
         data: (state.comparison.cdf[row.id] || []).map((point) => [point.score, point.ratio * 100]),
-        lineStyle: { width: 1.8 },
+        lineStyle: { width: 1.8, color: colorForRow(row) },
+        itemStyle: { color: colorForRow(row) },
       })),
     },
     true,

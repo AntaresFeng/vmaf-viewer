@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VMAF JSON Viewer</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
@@ -62,12 +63,12 @@
           <div class="panel-head split">
             <h2>Distribution</h2>
             <div class="tabs" role="tablist" aria-label="Distribution view">
-              <button id="histogramTab" class="tab is-active" type="button" role="tab" aria-selected="true">Histogram</button>
-              <button id="cdfTab" class="tab" type="button" role="tab" aria-selected="false">CDF</button>
+              <button id="histogramTab" class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="histogramChart">Histogram</button>
+              <button id="cdfTab" class="tab" type="button" role="tab" aria-selected="false" aria-controls="cdfChart">CDF</button>
             </div>
           </div>
-          <div id="histogramChart" class="chart"></div>
-          <div id="cdfChart" class="chart is-hidden"></div>
+          <div id="histogramChart" class="chart" role="tabpanel" aria-labelledby="histogramTab"></div>
+          <div id="cdfChart" class="chart is-hidden" role="tabpanel" aria-labelledby="cdfTab"></div>
         </section>
       </main>
     </div>

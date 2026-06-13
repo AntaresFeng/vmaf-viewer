@@ -353,6 +353,10 @@ input {
   cursor: pointer;
 }
 
+.chip:disabled {
+  cursor: default;
+}
+
 .chip .swatch {
   flex: 0 0 auto;
   width: 10px;
