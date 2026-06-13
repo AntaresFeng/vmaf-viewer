@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VMAF JSON Viewer</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-title">VMAF JSON Viewer</div>
+      <div class="scan-path" title="Scan directory">
+        <span class="label">Dir</span>
+        <span id="scanPath">Loading...</span>
+      </div>
+      <label class="threshold-control">
+        <span class="label">Thresholds</span>
+        <input id="thresholdInput" type="text" value="95,90,80,60" inputmode="decimal" spellcheck="false">
+      </label>
+      <button id="refreshButton" class="button" type="button">Refresh</button>
+      <div id="selectedCount" class="selected-count">0 selected</div>
+    </header>
+
+    <div class="workbench">
+      <aside class="sidebar" aria-label="VMAF files">
+        <div class="sidebar-head">
+          <h2>Files</h2>
+        </div>
+        <input id="fileFilter" class="file-filter" type="search" placeholder="Filter files" autocomplete="off">
+        <div id="fileList" class="file-list"></div>
+      </aside>
+
+      <main class="workspace">
+        <section id="messages" class="messages" aria-live="polite"></section>
+
+        <section class="panel summary-panel">
+          <div class="panel-head">
+            <h2>Sorted by mean VMAF</h2>
+          </div>
+          <div class="table-wrap">
+            <table id="summaryTable" class="summary-table"></table>
+          </div>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="panel-head split">
+            <h2>Per-frame VMAF</h2>
+            <div id="videoLegend" class="chip-row"></div>
+          </div>
+          <div id="lineChart" class="chart chart-large"></div>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="panel-head split">
+            <h2>Local Zoom</h2>
+            <div id="metricToggles" class="chip-row"></div>
+          </div>
+          <div id="zoomChart" class="chart"></div>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="panel-head split">
+            <h2>Distribution</h2>
+            <div class="tabs" role="tablist" aria-label="Distribution view">
+              <button id="histogramTab" class="tab is-active" type="button" role="tab" aria-selected="true">Histogram</button>
+              <button id="cdfTab" class="tab" type="button" role="tab" aria-selected="false">CDF</button>
+            </div>
+          </div>
+          <div id="histogramChart" class="chart"></div>
+          <div id="cdfChart" class="chart is-hidden"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/vendor/echarts.min.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
