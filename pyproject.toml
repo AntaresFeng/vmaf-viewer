@@ -1,0 +1,35 @@
+[project]
+name = "vmaf-json-viewer"
+version = "0.1.0"
+description = "Local web viewer for comparing libvmaf JSON outputs"
+readme = "AGENTS.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "orjson>=3.10.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[project.scripts]
+vmaf-viewer = "vmaf_viewer.app:main"
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vmaf_viewer"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.3",
+]
