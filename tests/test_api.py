@@ -32,6 +32,24 @@ def test_api_compare_returns_summary_and_charts():
     assert set(body["series"]) == {item["id"] for item in files}
 
 
+def test_api_compare_rejects_empty_selection():
+    client = TestClient(create_app(data_dir=Path("tests/fixtures")))
+
+    response = client.post("/api/compare", json={"file_ids": [], "thresholds": [90]})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Select at least one VMAF JSON file."
+
+
+def test_api_compare_rejects_unknown_file_id():
+    client = TestClient(create_app(data_dir=Path("tests/fixtures")))
+
+    response = client.post("/api/compare", json={"file_ids": ["missing"], "thresholds": [90]})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unknown file id: missing"
+
+
 def test_api_metrics_returns_metric_names_for_one_file():
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
     file_id = client.get("/api/files").json()["files"][0]["id"]

@@ -100,6 +100,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @app.post("/api/compare")
     def api_compare(request: CompareRequest) -> dict:
+        if not request.file_ids:
+            raise HTTPException(status_code=400, detail="Select at least one VMAF JSON file.")
+
         records = state.selected_records(request.file_ids)
         try:
             return compare_files(

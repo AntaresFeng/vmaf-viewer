@@ -239,7 +239,7 @@ async function requestComparison() {
   if (!fileIds.length) {
     state.comparison = null;
     state.extraSeries.clear();
-    renderMessages(state.files.length ? ["Select one or more files."] : []);
+    renderMessages(state.files.length ? ["Select 1-6 VMAF JSON files to compare."] : ["No *_vmaf.json files found."]);
     renderSummary();
     renderControls();
     renderCharts();
