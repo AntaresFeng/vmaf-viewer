@@ -15,10 +15,13 @@ const state = {
   selected: new Set(),
   comparison: null,
   hiddenFiles: new Set(),
-  activeMetrics: new Set(["primary_vmaf"]),
+  activeMetrics: new Set(["primary"]),
+  metricsByFile: new Map(),
+  extraSeries: new Map(),
   thresholds: [...DEFAULT_THRESHOLDS],
   distribution: "histogram",
   comparisonRequestId: 0,
+  zoomSeriesRequestId: 0,
 };
 
 const elements = {
@@ -162,6 +165,11 @@ async function loadFiles() {
   const ids = new Set(state.files.map((file) => file.id));
   state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
   state.hiddenFiles = new Set([...state.hiddenFiles].filter((id) => ids.has(id)));
+  for (const id of state.metricsByFile.keys()) {
+    if (!ids.has(id)) {
+      state.metricsByFile.delete(id);
+    }
+  }
 
   renderFiles();
   updateSelectedCount();
@@ -230,6 +238,7 @@ async function requestComparison() {
 
   if (!fileIds.length) {
     state.comparison = null;
+    state.extraSeries.clear();
     renderMessages(state.files.length ? ["Select one or more files."] : []);
     renderSummary();
     renderControls();
@@ -252,9 +261,16 @@ async function requestComparison() {
       return;
     }
     state.comparison = body;
+    state.extraSeries.clear();
+    const comparedFileIds = (body.summary || []).map((row) => row.id);
+    await loadMetricsForSelected(comparedFileIds);
+    if (requestId !== state.comparisonRequestId) {
+      return;
+    }
 
-    const comparedIds = new Set((body.summary || []).map((row) => row.id));
+    const comparedIds = new Set(comparedFileIds);
     state.hiddenFiles = new Set([...state.hiddenFiles].filter((id) => comparedIds.has(id)));
+    pruneActiveMetrics();
 
     renderMessages(body.warnings || []);
     renderSummary();
@@ -269,6 +285,101 @@ async function requestComparison() {
     renderSummary();
     renderControls();
     renderCharts();
+  }
+}
+
+async function loadMetricsForSelected(fileIds = [...state.selected]) {
+  for (const id of fileIds) {
+    if (state.metricsByFile.has(id)) {
+      continue;
+    }
+    const body = await api(`/api/file/${encodeURIComponent(id)}/metrics`);
+    state.metricsByFile.set(id, body.metrics || []);
+  }
+}
+
+function comparedFileIds() {
+  if (state.comparison && Array.isArray(state.comparison.summary)) {
+    return state.comparison.summary.map((row) => row.id);
+  }
+  return [...state.selected];
+}
+
+function sharedMetrics() {
+  const ids = comparedFileIds();
+  if (!ids.length || ids.some((id) => !state.metricsByFile.has(id))) {
+    return [];
+  }
+
+  const metricSets = ids.map((id) => new Set(state.metricsByFile.get(id) || []));
+  const first = [...metricSets[0]];
+  return first.filter((metric) => metricSets.every((set) => set.has(metric)));
+}
+
+function activeExtraMetrics() {
+  const shared = new Set(sharedMetrics());
+  return [...state.activeMetrics].filter((metric) => metric !== "primary" && shared.has(metric));
+}
+
+function pruneActiveMetrics() {
+  const allowed = new Set(["primary", ...sharedMetrics()]);
+  state.activeMetrics = new Set([...state.activeMetrics].filter((metric) => allowed.has(metric)));
+  if (!state.activeMetrics.size) {
+    state.activeMetrics.add("primary");
+  }
+}
+
+async function requestExtraSeries(metric, range = null) {
+  const fileIds = comparedFileIds();
+  if (!state.comparison || !fileIds.length) {
+    return;
+  }
+  if (!range && state.extraSeries.has(metric)) {
+    return;
+  }
+
+  const requestId = ++state.zoomSeriesRequestId;
+  const commonRange = state.comparison.common_range || {};
+  const body = await api("/api/series", {
+    method: "POST",
+    body: {
+      file_ids: fileIds,
+      metrics: [metric],
+      start: range ? range.start : commonRange.start || 0,
+      end: range ? range.end : commonRange.end,
+      max_points: range ? 5000 : 2000,
+    },
+  });
+
+  if (range && requestId !== state.zoomSeriesRequestId) {
+    return;
+  }
+  state.extraSeries.set(metric, body.series || {});
+}
+
+async function requestExtraSeriesForRange(metrics, range) {
+  const fileIds = comparedFileIds();
+  if (!state.comparison || !metrics.length || !fileIds.length) {
+    return;
+  }
+
+  const requestId = ++state.zoomSeriesRequestId;
+  const body = await api("/api/series", {
+    method: "POST",
+    body: {
+      file_ids: fileIds,
+      metrics,
+      start: range.start,
+      end: range.end,
+      max_points: 5000,
+    },
+  });
+
+  if (requestId !== state.zoomSeriesRequestId) {
+    return;
+  }
+  for (const metric of metrics) {
+    state.extraSeries.set(metric, body.series || {});
   }
 }
 
@@ -370,13 +481,47 @@ function renderControls() {
     elements.videoLegend.appendChild(chip);
   });
 
-  const metricChip = document.createElement("button");
-  metricChip.type = "button";
-  metricChip.className = "chip is-active";
-  metricChip.disabled = true;
-  metricChip.setAttribute("aria-disabled", "true");
-  metricChip.textContent = "Primary VMAF";
-  elements.metricToggles.appendChild(metricChip);
+  const primaryChip = document.createElement("button");
+  primaryChip.type = "button";
+  primaryChip.className = `chip${state.activeMetrics.has("primary") ? " is-active" : " is-muted"}`;
+  primaryChip.setAttribute("aria-pressed", String(state.activeMetrics.has("primary")));
+  primaryChip.textContent = "Primary VMAF";
+  primaryChip.addEventListener("click", () => {
+    if (state.activeMetrics.has("primary")) {
+      state.activeMetrics.delete("primary");
+    } else {
+      state.activeMetrics.add("primary");
+    }
+    renderControls();
+    renderCharts();
+  });
+  elements.metricToggles.appendChild(primaryChip);
+
+  const metrics = sharedMetrics().filter((metric) => metric !== "vmaf");
+  for (const metric of metrics) {
+    const isActive = state.activeMetrics.has(metric);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `chip${isActive ? " is-active" : " is-muted"}`;
+    chip.setAttribute("aria-pressed", String(isActive));
+    chip.textContent = metric;
+    chip.addEventListener("click", async () => {
+      if (state.activeMetrics.has(metric)) {
+        state.activeMetrics.delete(metric);
+      } else {
+        state.activeMetrics.add(metric);
+        try {
+          await requestExtraSeries(metric);
+        } catch (error) {
+          state.activeMetrics.delete(metric);
+          renderMessages([error.message || `Unable to load ${metric}.`], "error");
+        }
+      }
+      renderControls();
+      renderCharts();
+    });
+    elements.metricToggles.appendChild(chip);
+  }
 }
 
 function visibleRows() {
@@ -456,8 +601,11 @@ function emptyChart(chart, text) {
   });
 }
 
-function lineSeries(rows) {
-  return rows.map((row, index) => {
+function primaryLineSeries(rows) {
+  if (!state.activeMetrics.has("primary")) {
+    return [];
+  }
+  return rows.map((row) => {
     const series = state.comparison.series[row.id] || {};
     const color = colorForRow(row);
     return {
@@ -470,9 +618,37 @@ function lineSeries(rows) {
       lineStyle: { width: 1.6, color },
       itemStyle: { color },
       emphasis: { focus: "series" },
-      markLine: index === 0 ? { silent: true, symbol: "none", data: referenceLines() } : undefined,
     };
   });
+}
+
+function extraMetricLineSeries(rows) {
+  const series = [];
+  for (const metric of activeExtraMetrics()) {
+    const metricSeries = state.extraSeries.get(metric) || {};
+    for (const row of rows) {
+      const color = colorForRow(row);
+      series.push({
+        name: `${row.name} ${metric}`,
+        type: "line",
+        showSymbol: false,
+        smooth: false,
+        data: metricSeries[row.id]?.[metric]?.points || [],
+        lineStyle: { width: 1.4, color, type: "dotted" },
+        itemStyle: { color },
+        emphasis: { focus: "series" },
+      });
+    }
+  }
+  return series;
+}
+
+function comparisonLineSeries(rows) {
+  const series = [...primaryLineSeries(rows), ...extraMetricLineSeries(rows)];
+  if (series.length) {
+    series[0].markLine = { silent: true, symbol: "none", data: referenceLines() };
+  }
+  return series;
 }
 
 function renderLineCharts() {
@@ -484,7 +660,12 @@ function renderLineCharts() {
     return;
   }
 
-  const series = lineSeries(rows);
+  const series = comparisonLineSeries(rows);
+  if (!series.length) {
+    emptyChart(charts.line, "No active metric series.");
+    emptyChart(charts.zoom, "No active metric series.");
+    return;
+  }
   const commonRange = state.comparison.common_range || {};
 
   charts.line.setOption(
@@ -520,6 +701,37 @@ function renderLineCharts() {
     },
     true,
   );
+
+  charts.zoom.off("datazoom");
+  charts.zoom.on("datazoom", async () => {
+    const metrics = activeExtraMetrics();
+    if (!state.comparison || !metrics.length) {
+      return;
+    }
+
+    const option = charts.zoom.getOption();
+    const zoom = (option.dataZoom || []).find((item) => Number.isFinite(item.start) && Number.isFinite(item.end));
+    if (!zoom) {
+      return;
+    }
+
+    const rangeStart = Number(commonRange.start || 0);
+    const rangeEnd = Number(commonRange.end || 0);
+    const span = Math.max(0, rangeEnd - rangeStart);
+    const start = Math.max(rangeStart, Math.floor(rangeStart + (zoom.start / 100) * span));
+    const end = Math.min(rangeEnd, Math.ceil(rangeStart + (zoom.end / 100) * span));
+
+    if (end - start > 5000) {
+      return;
+    }
+
+    try {
+      await requestExtraSeriesForRange(metrics, { start, end });
+      renderCharts();
+    } catch (error) {
+      renderMessages([error.message || "Unable to load zoomed metric series."], "error");
+    }
+  });
 }
 
 function renderDistributionCharts() {
