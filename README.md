@@ -1,4 +1,4 @@
-# VMAF Compare
+﻿# VMAF Compare
 
 Local tools for comparing libvmaf JSON outputs from distorted video encodes.
 
@@ -15,7 +15,7 @@ uv sync
 Fetch the local ECharts asset:
 
 ```powershell
-uv run python scripts/fetch_echarts.py
+uv run python devscripts/fetch_echarts.py
 ```
 
 Run the viewer:

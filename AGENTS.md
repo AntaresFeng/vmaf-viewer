@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) or Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -10,22 +10,22 @@ Test datasets live in `videos/video0/` and `videos/video1/`, each containing a r
 
 ## Key Scripts
 
-### vmaf_compare.sh
+### devscripts/vmaf_compare.sh
 
 Runs VMAF comparison between a reference video and one or more distorted videos. Outputs per-frame VMAF scores as JSON.
 
 ```bash
-./vmaf_compare.sh <reference.mp4> <distorted1.mp4> [distorted2.mp4] ...
+./devscripts/vmaf_compare.sh <reference.mp4> <distorted1.mp4> [distorted2.mp4] ...
 ```
 
 Output: `<distorted_name>_vmaf.json` containing frame-level metrics (vmaf, adm, vif, motion).
 
-### extract_vmaf_frame_bundle.py
+### devscripts/extract_vmaf_frame_bundle.py
 
 Extracts PNG frame bundles for low-VMAF frames from reference and all distorted videos simultaneously. Used for visual inspection of quality degradation.
 
 ```bash
-python extract_vmaf_frame_bundle.py <vmaf.json> --ref <reference.mp4> --distorted <video1.mp4> <video2.mp4> [--threshold 0.0] [--window 1] [--overwrite]
+python devscripts/extract_vmaf_frame_bundle.py <vmaf.json> --ref <reference.mp4> --distorted <video1.mp4> <video2.mp4> [--threshold 0.0] [--window 1] [--overwrite]
 ```
 
 Key options:
@@ -52,6 +52,10 @@ Output structure:
 - **jq** for JSON parsing in shell scripts
 - **Python 3.6+** for frame extraction script
 
+## Windows Encoding Note
+
+在中文 Windows 上使用 PowerShell 5.1 读写 UTF-8 文件时，必须显式指定 `-Encoding UTF8` 参数。
+
 ## VMAF Frame Sync Issue (Critical)
 
 Different sources produce videos with different `time_base` values even at the same frame rate. Bilibili AVC uses `1/16000` with PTS quantized to integer milliseconds (alternating 16ms/17ms), while YouTube reference uses `1/15360` with precise 1/60s spacing. This causes ±0.333ms per-frame PTS oscillation.
@@ -74,7 +78,7 @@ See `docs/vmaf-zero-score-issue.md` for the full investigation, and `docs/fps-fi
 
 ## Data Format
 
-VMAF JSON output (`vmaf_schema.json` for formal schema):
+VMAF JSON output (`docs/vmaf_schema.json` for formal schema):
 - Top-level: `version`, `fps`, `frames[]`, `pooled_metrics`, `aggregate_metrics`
 - `frames[]`: per-frame array with `frameNum` and `metrics` — metric names vary by model/feature; at least one of `vmaf` or `vmaf_hd` is present
 - `pooled_metrics`: per-metric `{min, max, mean, harmonic_mean}`
@@ -86,4 +90,4 @@ VMAF JSON output (`vmaf_schema.json` for formal schema):
 - `metadata.txt`: Source video metadata (Bilibili BV IDs, YouTube IDs, encoding specs)
 - `devscripts/`: Test and development scripts
 - `docs/`: Investigation notes on PTS alignment and zero-score issues
-- `mono`: Scratch notes
+- `devscripts/mono`: Scratch notes

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import importlib.util
@@ -8,7 +8,7 @@ import pytest
 
 
 EXPECTED_URL = "https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "fetch_echarts.py"
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "devscripts" / "fetch_echarts.py"
 SPEC = importlib.util.spec_from_file_location("fetch_echarts", SCRIPT_PATH)
 assert SPEC is not None
 assert SPEC.loader is not None
