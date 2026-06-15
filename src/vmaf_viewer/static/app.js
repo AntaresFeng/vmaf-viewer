@@ -389,10 +389,59 @@ function thresholdEntry(stats, threshold) {
   return key ? entries[key] : null;
 }
 
+function meanQualityClass(value) {
+  const mean = Number(value);
+  if (!Number.isFinite(mean)) {
+    return "";
+  }
+  if (mean >= 95) {
+    return "mean-excellent";
+  }
+  if (mean >= 90) {
+    return "mean-good";
+  }
+  if (mean >= 80) {
+    return "mean-medium";
+  }
+  if (mean >= 70) {
+    return "mean-poor";
+  }
+  return "mean-bad";
+}
+
+function columnExtrema(rows, getValue, higherIsBetter = true) {
+  const values = rows.map(getValue).map(Number).filter(Number.isFinite);
+  if (values.length < 2) {
+    return null;
+  }
+
+  const high = Math.max(...values);
+  const low = Math.min(...values);
+  if (high === low) {
+    return null;
+  }
+
+  return higherIsBetter ? { best: high, worst: low } : { best: low, worst: high };
+}
+
+function extremaClass(value, extrema) {
+  const number = Number(value);
+  if (!extrema || !Number.isFinite(number)) {
+    return "";
+  }
+  if (number === extrema.best) {
+    return "cell-best";
+  }
+  if (number === extrema.worst) {
+    return "cell-worst";
+  }
+  return "";
+}
+
 function renderSummary() {
   const rows = state.comparison ? state.comparison.summary || [] : [];
   const thresholds = state.thresholds.length ? state.thresholds : DEFAULT_THRESHOLDS;
-  const thresholdHeaders = thresholds.map((threshold) => `<th>&lt;= ${escapeHtml(formatThreshold(threshold))}</th>`).join("");
+  const thresholdHeaders = thresholds.map((threshold) => `<th>≤${escapeHtml(formatThreshold(threshold))}</th>`).join("");
 
   elements.summaryTable.innerHTML = `
     <thead>
@@ -419,31 +468,54 @@ function renderSummary() {
     return;
   }
 
-  const bestMean = Math.max(...rows.map((row) => Number(row.stats.mean)).filter(Number.isFinite));
+  const metricExtrema = {
+    min: columnExtrema(rows, (row) => row.stats && row.stats.min),
+    max: columnExtrema(rows, (row) => row.stats && row.stats.max),
+    p1: columnExtrema(rows, (row) => row.stats && row.stats.p1),
+    p5: columnExtrema(rows, (row) => row.stats && row.stats.p5),
+    p10: columnExtrema(rows, (row) => row.stats && row.stats.p10),
+  };
+  const thresholdExtrema = new Map(
+    thresholds.map((threshold) => [
+      Number(threshold),
+      columnExtrema(
+        rows,
+        (row) => {
+          const entry = thresholdEntry(row.stats || {}, threshold);
+          return entry ? entry.count : NaN;
+        },
+        false,
+      ),
+    ]),
+  );
+
   tbody.innerHTML = rows
     .map((row) => {
       const stats = row.stats || {};
       const mean = Number(stats.mean);
-      const rowClass = Number.isFinite(bestMean) && mean === bestMean ? "best-mean" : bestMean - mean >= 1 ? "weak-mean" : "";
+      const meanClass = ["mean-cell", meanQualityClass(mean)].filter(Boolean).join(" ");
       const thresholdCells = thresholds
         .map((threshold) => {
           const entry = thresholdEntry(stats, threshold);
           const count = entry ? entry.count : "n/a";
           const ratio = entry ? formatPercent(entry.ratio) : "n/a";
-          return `<td class="threshold-cell"><strong>${escapeHtml(count)}</strong> ${escapeHtml(ratio)}</td>`;
+          const cellClass = ["threshold-cell", extremaClass(count, thresholdExtrema.get(Number(threshold)))]
+            .filter(Boolean)
+            .join(" ");
+          return `<td class="${cellClass}"><strong>${escapeHtml(count)}</strong> ${escapeHtml(ratio)}</td>`;
         })
         .join("");
       const frames = `${row.common_frames || stats.count || 0}/${row.total_frames || 0}`;
 
       return `
-        <tr class="${rowClass}">
+        <tr>
           <td title="${escapeHtml(row.relative_path || row.name)}">${escapeHtml(row.name)}</td>
-          <td class="mean-cell">${escapeHtml(formatNumber(stats.mean))}</td>
-          <td>${escapeHtml(formatNumber(stats.min))}</td>
-          <td>${escapeHtml(formatNumber(stats.max))}</td>
-          <td>${escapeHtml(formatNumber(stats.p1))}</td>
-          <td>${escapeHtml(formatNumber(stats.p5))}</td>
-          <td>${escapeHtml(formatNumber(stats.p10))}</td>
+          <td class="${meanClass}">${escapeHtml(formatNumber(stats.mean))}</td>
+          <td class="${extremaClass(stats.min, metricExtrema.min)}">${escapeHtml(formatNumber(stats.min))}</td>
+          <td class="${extremaClass(stats.max, metricExtrema.max)}">${escapeHtml(formatNumber(stats.max))}</td>
+          <td class="${extremaClass(stats.p1, metricExtrema.p1)}">${escapeHtml(formatNumber(stats.p1))}</td>
+          <td class="${extremaClass(stats.p5, metricExtrema.p5)}">${escapeHtml(formatNumber(stats.p5))}</td>
+          <td class="${extremaClass(stats.p10, metricExtrema.p10)}">${escapeHtml(formatNumber(stats.p10))}</td>
           ${thresholdCells}
           <td>${escapeHtml(frames)}</td>
         </tr>

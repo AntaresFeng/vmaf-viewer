@@ -8,19 +8,19 @@ The viewer is a local web app managed with `uv`.
 
 Install and sync dependencies:
 
-```powershell
+```bash
 uv sync
 ```
 
 Fetch the local ECharts asset:
 
-```powershell
+```bash
 uv run python devscripts/fetch_echarts.py
 ```
 
 Run the viewer:
 
-```powershell
+```bash
 uv run vmaf-viewer
 ```
 
@@ -38,8 +38,8 @@ videos/
 
 Override the scan directory:
 
-```powershell
-$env:VMAF_VIEWER_DATA_DIR = "D:\path\to\vmaf-jsons"
+```bash
+$env:VMAF_VIEWER_DATA_DIR = "/path/to/vmaf-jsons"
 uv run vmaf-viewer
 ```
 
@@ -49,6 +49,6 @@ The app compares selected `*_vmaf.json` files over their shortest common frame r
 
 Run all tests through `uv`:
 
-```powershell
+```bash
 uv run pytest
 ```

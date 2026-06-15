@@ -307,14 +307,41 @@ input {
   overflow-wrap: anywhere;
 }
 
-.summary-table tr.best-mean td.mean-cell {
+.summary-table td.mean-cell {
+  font-weight: 750;
+  text-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.72),
+    0 0 1px rgba(36, 40, 33, 0.28);
+}
+
+.summary-table td.mean-excellent {
+  color: #48c072;
+}
+
+.summary-table td.mean-good {
+  color: #a6e978;
+}
+
+.summary-table td.mean-medium {
+  color: #ffdd44;
+}
+
+.summary-table td.mean-poor {
+  color: #ff9538;
+}
+
+.summary-table td.mean-bad {
+  color: #ff5757;
+}
+
+.summary-table td.cell-best {
   color: var(--accent);
   font-weight: 800;
 }
 
-.summary-table tr.weak-mean td.mean-cell {
+.summary-table td.cell-worst {
   color: var(--danger);
-  font-weight: 750;
+  font-weight: 800;
 }
 
 .empty-cell {
@@ -327,8 +354,8 @@ input {
 }
 
 .threshold-cell strong {
-  color: var(--text);
-  font-weight: 750;
+  color: inherit;
+  font-weight: inherit;
 }
 
 .chip-row {
