@@ -16,6 +16,35 @@ def test_api_files_returns_scanned_json_files():
     assert body["data_dir"].endswith("tests/fixtures")
 
 
+def test_api_data_dir_switches_scan_root(tmp_path):
+    fixture = Path("tests/fixtures/alpha_vmaf.json")
+    new_dir = tmp_path / "new-jsons"
+    new_dir.mkdir()
+    (new_dir / "gamma_vmaf.json").write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+    client = TestClient(create_app(data_dir=Path("tests/fixtures")))
+
+    response = client.post("/api/data-dir", json={"data_dir": str(new_dir)})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data_dir"] == new_dir.resolve().as_posix()
+    assert [item["name"] for item in body["files"]] == ["gamma_vmaf.json"]
+    assert [item["name"] for item in client.get("/api/files").json()["files"]] == ["gamma_vmaf.json"]
+
+
+def test_api_data_dir_rejects_invalid_directory_without_changing_current(tmp_path):
+    not_a_dir = tmp_path / "not-a-dir.txt"
+    not_a_dir.write_text("not a directory", encoding="utf-8")
+    client = TestClient(create_app(data_dir=Path("tests/fixtures")))
+    original = client.get("/api/files").json()["data_dir"]
+
+    response = client.post("/api/data-dir", json={"data_dir": str(not_a_dir)})
+
+    assert response.status_code == 400
+    assert "directory" in response.json()["detail"]
+    assert client.get("/api/files").json()["data_dir"] == original
+
+
 def test_api_compare_returns_summary_and_charts():
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
     files = client.get("/api/files").json()["files"]

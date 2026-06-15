@@ -24,6 +24,13 @@ Run the viewer:
 uv run vmaf-viewer
 ```
 
+Run the viewer with a scan directory:
+
+```bash
+uv run vmaf-viewer /path/to/vmaf-jsons
+uv run vmaf-viewer --data-dir /path/to/vmaf-jsons
+```
+
 Open:
 
 ```text
@@ -42,6 +49,9 @@ Override the scan directory:
 $env:VMAF_VIEWER_DATA_DIR = "/path/to/vmaf-jsons"
 uv run vmaf-viewer
 ```
+
+The startup directory priority is `--data-dir`, then the positional directory, then `VMAF_VIEWER_DATA_DIR`, then `videos/`.
+You can also change the scan directory from the top `Dir` field in the web UI and press `Scan`.
 
 The app compares selected `*_vmaf.json` files over their shortest common frame range and ranks videos by mean VMAF by default.
 

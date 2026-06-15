@@ -25,7 +25,9 @@ const state = {
 };
 
 const elements = {
-  scanPath: document.getElementById("scanPath"),
+  scanPathForm: document.getElementById("scanPathForm"),
+  scanPathInput: document.getElementById("scanPathInput"),
+  scanPathButton: document.getElementById("scanPathButton"),
   thresholdInput: document.getElementById("thresholdInput"),
   refreshButton: document.getElementById("refreshButton"),
   selectedCount: document.getElementById("selectedCount"),
@@ -157,18 +159,36 @@ function colorForRow(row) {
   return colorForId(row.id);
 }
 
-async function loadFiles() {
-  const body = await api("/api/files");
+function resetComparisonState() {
+  state.selected.clear();
+  state.comparison = null;
+  state.hiddenFiles.clear();
+  state.activeMetrics = new Set(["primary"]);
+  state.metricsByFile.clear();
+  state.extraSeries.clear();
+  state.comparisonRequestId += 1;
+  state.zoomSeriesRequestId += 1;
+}
+
+function applyFilesResponse(body, { preserveSelection = true, resetFilter = false } = {}) {
   state.files = body.files || [];
-  elements.scanPath.textContent = body.data_dir || "";
+  elements.scanPathInput.value = body.data_dir || "";
 
   const ids = new Set(state.files.map((file) => file.id));
-  state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
-  state.hiddenFiles = new Set([...state.hiddenFiles].filter((id) => ids.has(id)));
-  for (const id of state.metricsByFile.keys()) {
-    if (!ids.has(id)) {
-      state.metricsByFile.delete(id);
+  if (preserveSelection) {
+    state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
+    state.hiddenFiles = new Set([...state.hiddenFiles].filter((id) => ids.has(id)));
+    for (const id of state.metricsByFile.keys()) {
+      if (!ids.has(id)) {
+        state.metricsByFile.delete(id);
+      }
     }
+  } else {
+    resetComparisonState();
+  }
+
+  if (resetFilter) {
+    elements.fileFilter.value = "";
   }
 
   renderFiles();
@@ -178,6 +198,36 @@ async function loadFiles() {
     renderMessages(["No *_vmaf.json files found."]);
   } else {
     renderMessages([]);
+  }
+}
+
+async function loadFiles() {
+  const body = await api("/api/files");
+  applyFilesResponse(body);
+}
+
+async function changeScanDirectory() {
+  const dataDir = elements.scanPathInput.value.trim();
+  if (!dataDir) {
+    renderMessages(["Enter a scan directory."], "error");
+    elements.scanPathInput.focus();
+    return;
+  }
+
+  elements.scanPathButton.disabled = true;
+  try {
+    const body = await api("/api/data-dir", {
+      method: "POST",
+      body: { data_dir: dataDir },
+    });
+    applyFilesResponse(body, { preserveSelection: false, resetFilter: true });
+    renderSummary();
+    renderControls();
+    renderCharts();
+  } catch (error) {
+    renderMessages([error.message || "Unable to scan that directory."], "error");
+  } finally {
+    elements.scanPathButton.disabled = false;
   }
 }
 
@@ -920,6 +970,11 @@ function updateDistributionVisibility() {
 }
 
 function setupEvents() {
+  elements.scanPathForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    changeScanDirectory();
+  });
+
   elements.refreshButton.addEventListener("click", async () => {
     elements.refreshButton.disabled = true;
     try {
