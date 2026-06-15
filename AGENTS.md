@@ -1,93 +1,71 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) or Claude Code (claude.ai/code) when working with code in this repository.
+This file gives coding agents durable, repository-specific guidance. Keep it concise: put long investigations, issue details, and design notes in `docs/`, then link them here.
 
 ## Project Overview
 
-VMAF video quality comparison toolkit for analyzing encoding differences between Bilibili and YouTube video sources. Compares AVC, HEVC, and AV1 encodes against reference videos using Netflix's VMAF metric via ffmpeg's libvmaf filter.
+VMAF Compare is a local toolkit for comparing video encodes with Netflix VMAF:
 
-Test datasets live in `videos/video0/` and `videos/video1/`, each containing a reference video and multiple distorted encodes. Source metadata (BV IDs, YouTube IDs, encoding specs) is in `metadata.txt`.
+- Shell/Python dev scripts generate VMAF JSON and extract low-score frame bundles.
+- `vmaf-viewer` is a local FastAPI + static ECharts web app for comparing multiple `*_vmaf.json` files.
+- The comparison focus is degraded-video vs degraded-video ranking, not only "where one encode differs from the source."
+
+Test media and generated VMAF output live under `videos/`. Treat `videos/` as local data only; never add it to git.
+
+## Agent Guidance Style
+
+- Follow the nearest applicable `AGENTS.md`; explicit user instructions override repo guidance.
+- Keep this file for commands, conventions, constraints, and pointers an agent needs before editing.
+- Move detailed issue descriptions, long investigations, and future feature notes into `docs/`.
+- When adding new project behavior, update the relevant docs link instead of expanding this file with a long narrative.
+
+## Commands
+
+Always use `uv` for Python environment management.
+
+```bash
+uv sync
+uv run pytest -q
+uv run vmaf-viewer
+uv run vmaf-viewer /path/to/vmaf-jsons
+uv run vmaf-viewer --data-dir /path/to/vmaf-jsons
+uv run python devscripts/fetch_echarts.py
+```
+
+`vmaf-viewer` scans `videos/` by default. Startup scan-directory priority is `--data-dir`, then the positional directory, then `VMAF_VIEWER_DATA_DIR`, then `videos/`. The web UI can also switch the scan directory from the top `Dir` field.
 
 ## Key Scripts
 
-### devscripts/vmaf_compare.sh
-
-Runs VMAF comparison between a reference video and one or more distorted videos. Outputs per-frame VMAF scores as JSON.
-
-```bash
-./devscripts/vmaf_compare.sh <reference.mp4> <distorted1.mp4> [distorted2.mp4] ...
-```
-
-Output: `<distorted_name>_vmaf.json` containing frame-level metrics (vmaf, adm, vif, motion).
-
-### devscripts/extract_vmaf_frame_bundle.py
-
-Extracts PNG frame bundles for low-VMAF frames from reference and all distorted videos simultaneously. Used for visual inspection of quality degradation.
-
-```bash
-python devscripts/extract_vmaf_frame_bundle.py <vmaf.json> --ref <reference.mp4> --distorted <video1.mp4> <video2.mp4> [--threshold 0.0] [--window 1] [--overwrite]
-```
-
-Key options:
-- `--threshold`: Select frames with VMAF at or below this value (default: 0)
-- `--window`: Export neighboring frames ±N around each selected frame (default: 1)
-- `--limit-centers`: Only process first N low-scoring frames
-- `--overwrite`: Replace existing output directory
-
-Output structure:
-```
-<name>_vmaf_frames/
-  index.json          # manifest with all frame metadata
-  frame_NNNNNN/
-    frame.json        # per-frame metadata (frameNum, vmaf, selected_by)
-    reference.png
-    <distorted1>.png
-    <distorted2>.png
-```
+- `devscripts/vmaf_compare.sh`: compare one reference video against one or more distorted videos and write per-frame VMAF JSON.
+- `devscripts/extract_vmaf_frame_bundle.py`: export reference/distorted PNG bundles around selected low-VMAF frames.
+- `devscripts/fetch_echarts.py`: download and verify the vendored ECharts asset for the static viewer.
 
 ## Dependencies
 
-- **ffmpeg** with libvmaf support (run `ffmpeg -h filter=libvmaf` to verify)
-- **ffprobe** (bundled with ffmpeg)
-- **jq** for JSON parsing in shell scripts
-- **Python 3.6+** for frame extraction script
+- Python 3.11+ managed with `uv`
+- `ffmpeg` with libvmaf support; verify with `ffmpeg -h filter=libvmaf`
+- `ffprobe`
+- `jq` for shell scripts
 
-## Windows Encoding Note
+## Critical Constraints
 
-在中文 Windows 上使用 PowerShell 5.1 读写 UTF-8 文件时，必须显式指定 `-Encoding UTF8` 参数。
+- Always ignore the entire `videos/` tree.
+- Always use `ts_sync_mode=nearest` in libvmaf commands unless a task explicitly investigates an alternative.
+- Do not hand-edit generated VMAF JSON outputs.
+- On Chinese Windows with PowerShell 5.1, explicitly pass `-Encoding UTF8` when reading or writing UTF-8 files.
 
-## VMAF Frame Sync Issue (Critical)
+## VMAF Viewer Notes
 
-Different sources produce videos with different `time_base` values even at the same frame rate. Bilibili AVC uses `1/16000` with PTS quantized to integer milliseconds (alternating 16ms/17ms), while YouTube reference uses `1/15360` with precise 1/60s spacing. This causes ±0.333ms per-frame PTS oscillation.
+- Package entrypoint: `vmaf-viewer = "vmaf_viewer.app:main"` in `pyproject.toml`.
+- Backend: `src/vmaf_viewer/app.py`, `compare.py`, `parser.py`, `scanner.py`, `stats.py`.
+- Frontend: `src/vmaf_viewer/static/index.html`, `app.js`, `styles.css`, plus vendored `vendor/echarts.min.js`.
+- API surface includes `/api/files`, `/api/data-dir`, `/api/compare`, `/api/file/{file_id}/metrics`, and `/api/series`.
+- Large JSON files and 4-6 way comparisons are expected; preserve downsampling and avoid loading unnecessary per-frame series in the initial comparison path.
+- For frontend changes, run `node --check src/vmaf_viewer/static/app.js` and `uv run pytest -q`.
 
-libvmaf's default `ts_sync_mode=default` uses "nearest lower or equal timestamp" to pair frames. When a distorted frame's PTS is slightly less than the reference, framesync picks the *previous* reference frame — producing VMAF=0 for ~15% of frames. The `motion=0` sub-metric on affected frames confirms the mismatch (VMAF receives duplicate content).
+## Documentation Links
 
-**Fix:** Always use `ts_sync_mode=nearest` in libvmaf parameters:
-
-```bash
-ffmpeg -i distorted.mp4 -i reference.mp4 \
-  -lavfi "[0:v]setpts=PTS-STARTPTS[distorted];
-          [1:v]setpts=PTS-STARTPTS[reference];
-          [distorted][reference]libvmaf=log_fmt=json:log_path=output.json:ts_sync_mode=nearest" \
-  -f null -
-```
-
-**Alternative:** Force PTS to frame index with `setpts=N/(60*TB)` on both inputs — eliminates the quantization difference entirely.
-
-See `docs/vmaf-zero-score-issue.md` for the full investigation, and `docs/fps-filter-pts-normalization-side-effect.md` for why easyVmaf's fps filter accidentally masks this issue.
-
-## Data Format
-
-VMAF JSON output (`docs/vmaf_schema.json` for formal schema):
-- Top-level: `version`, `fps`, `frames[]`, `pooled_metrics`, `aggregate_metrics`
-- `frames[]`: per-frame array with `frameNum` and `metrics` — metric names vary by model/feature; at least one of `vmaf` or `vmaf_hd` is present
-- `pooled_metrics`: per-metric `{min, max, mean, harmonic_mean}`
-
-## Directory Structure
-
-- `video0/`, `video1/`: Test datasets with reference and distorted encodes
-- `video*_proxy.mp4`: 10-second proxy clips generated with `-c copy` for fast testing (time_base preserved, but duration may exceed 10s due to keyframe boundaries — use `-t 10` in ffmpeg to clamp)
-- `metadata.txt`: Source video metadata (Bilibili BV IDs, YouTube IDs, encoding specs)
-- `devscripts/`: Test and development scripts
-- `docs/`: Investigation notes on PTS alignment and zero-score issues
-- `devscripts/mono`: Scratch notes
+- Current feature/issues list: `docs/issues.md`
+- VMAF JSON schema: `docs/vmaf_schema.json`
+- VMAF zero-score investigation: `docs/vmaf-zero-score-issue.md` Essentially, it's frame synchronization.
+- fps filter / PTS normalization note: `docs/fps-filter-pts-normalization-side-effect.md`
