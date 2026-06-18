@@ -1032,6 +1032,7 @@ setupEvents();
 renderSummary();
 renderControls();
 renderCharts();
+renderMessage({ status: VmafMessageState.DEFAULT_STATUS_MESSAGE });
 loadFiles().catch((error) => {
   renderMessage({ error: error.message || "Unable to load files." });
 });
