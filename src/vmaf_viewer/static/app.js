@@ -139,14 +139,14 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function renderMessages(messages, type = "warning") {
+function renderMessage(messageState = {}) {
+  const selected = VmafMessageState.pickMessageState(messageState);
   elements.messages.innerHTML = "";
-  for (const message of messages || []) {
-    const item = document.createElement("div");
-    item.className = `message ${type}`;
-    item.textContent = message;
-    elements.messages.appendChild(item);
-  }
+
+  const item = document.createElement("div");
+  item.className = selected.type === "status" ? "message" : `message ${selected.type}`;
+  item.textContent = selected.text;
+  elements.messages.appendChild(item);
 }
 
 function colorForId(id) {
@@ -195,9 +195,9 @@ function applyFilesResponse(body, { preserveSelection = true, resetFilter = fals
   updateSelectedCount();
 
   if (!state.files.length) {
-    renderMessages(["No *_vmaf.json files found."]);
+    renderMessage({ status: "No *_vmaf.json files found." });
   } else {
-    renderMessages([]);
+    renderMessage({ status: VmafMessageState.DEFAULT_STATUS_MESSAGE });
   }
 }
 
@@ -209,7 +209,7 @@ async function loadFiles() {
 async function changeScanDirectory() {
   const dataDir = elements.scanPathInput.value.trim();
   if (!dataDir) {
-    renderMessages(["Enter a scan directory."], "error");
+    renderMessage({ error: "Enter a scan directory." });
     elements.scanPathInput.focus();
     return;
   }
@@ -225,7 +225,7 @@ async function changeScanDirectory() {
     renderControls();
     renderCharts();
   } catch (error) {
-    renderMessages([error.message || "Unable to scan that directory."], "error");
+    renderMessage({ error: error.message || "Unable to scan that directory." });
   } finally {
     elements.scanPathButton.disabled = false;
   }
@@ -289,14 +289,16 @@ async function requestComparison() {
   if (!fileIds.length) {
     state.comparison = null;
     state.extraSeries.clear();
-    renderMessages(state.files.length ? ["Select 1-6 VMAF JSON files to compare."] : ["No *_vmaf.json files found."]);
+    renderMessage({
+      status: state.files.length ? VmafMessageState.DEFAULT_STATUS_MESSAGE : "No *_vmaf.json files found.",
+    });
     renderSummary();
     renderControls();
     renderCharts();
     return;
   }
 
-  renderMessages(["Loading comparison..."]);
+  renderMessage({ status: "Loading comparison data..." });
 
   try {
     const body = await api("/api/compare", {
@@ -322,7 +324,10 @@ async function requestComparison() {
     state.hiddenFiles = new Set([...state.hiddenFiles].filter((id) => comparedIds.has(id)));
     pruneActiveMetrics();
 
-    renderMessages(body.warnings || []);
+    renderMessage({
+      warnings: body.warnings || [],
+      success: VmafMessageState.formatLoadedMessage(body.summary),
+    });
     renderSummary();
     renderControls();
     renderCharts();
@@ -331,7 +336,7 @@ async function requestComparison() {
       return;
     }
     state.comparison = null;
-    renderMessages([error.message || "Unable to compare selected files."], "error");
+    renderMessage({ error: error.message || "Unable to compare selected files." });
     renderSummary();
     renderControls();
     renderCharts();
@@ -636,7 +641,7 @@ function renderControls() {
           await requestExtraSeries(metric);
         } catch (error) {
           state.activeMetrics.delete(metric);
-          renderMessages([error.message || `Unable to load ${metric}.`], "error");
+          renderMessage({ error: error.message || `Unable to load ${metric}.` });
         }
       }
       renderControls();
@@ -851,7 +856,7 @@ function renderLineCharts() {
       await requestExtraSeriesForRange(metrics, { start, end });
       renderCharts();
     } catch (error) {
-      renderMessages([error.message || "Unable to load zoomed metric series."], "error");
+      renderMessage({ error: error.message || "Unable to load zoomed metric series." });
     }
   });
 }
@@ -987,7 +992,7 @@ function setupEvents() {
         renderCharts();
       }
     } catch (error) {
-      renderMessages([error.message || "Unable to refresh files."], "error");
+      renderMessage({ error: error.message || "Unable to refresh files." });
     } finally {
       elements.refreshButton.disabled = false;
     }
@@ -1028,5 +1033,5 @@ renderSummary();
 renderControls();
 renderCharts();
 loadFiles().catch((error) => {
-  renderMessages([error.message || "Unable to load files."], "error");
+  renderMessage({ error: error.message || "Unable to load files." });
 });
