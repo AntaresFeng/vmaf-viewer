@@ -9,6 +9,8 @@ const COLORS = [
   "#6f5b9c",
   "#b23b32",
 ];
+const DISTRIBUTION_MIN_SCORE = 50;
+const DISTRIBUTION_MAX_SCORE = 100;
 
 const state = {
   files: [],
@@ -660,6 +662,37 @@ function visibleRows() {
   return (state.comparison.summary || []).filter((row) => !state.hiddenFiles.has(row.id));
 }
 
+function finiteBoxplotValues(row) {
+  const stats = row.stats || {};
+  const values = [stats.min, stats.q1, stats.median, stats.q3, stats.max].map((value) => Number(value));
+  return values.every((value) => Number.isFinite(value)) ? values : null;
+}
+
+function boxplotDataset(rows) {
+  const labels = [];
+  const data = [];
+
+  for (const row of rows) {
+    const values = finiteBoxplotValues(row);
+    if (!values) {
+      continue;
+    }
+    labels.push(row.name);
+    data.push({
+      value: values,
+      itemStyle: { color: colorForRow(row), borderColor: colorForRow(row) },
+    });
+  }
+
+  return { labels, data };
+}
+
+function focusedHistogramBuckets(row) {
+  return (state.comparison.histogram[row.id] || []).filter(
+    (bucket) => Number(bucket.end) > DISTRIBUTION_MIN_SCORE && Number(bucket.start) < DISTRIBUTION_MAX_SCORE,
+  );
+}
+
 function referenceLines() {
   return state.thresholds.map((threshold) => ({
     name: formatThreshold(threshold),
@@ -863,6 +896,61 @@ function renderLineCharts() {
   });
 }
 
+function renderBoxplotChart(rows) {
+  const { labels, data } = boxplotDataset(rows);
+
+  if (!data.length) {
+    emptyChart(charts.boxplot, "No boxplot data.");
+    return;
+  }
+
+  charts.boxplot.setOption(
+    {
+      animation: false,
+      color: COLORS,
+      tooltip: {
+        trigger: "item",
+        confine: true,
+        formatter: (params) => {
+          const [min, q1, median, q3, max] = params.value || [];
+          return [
+            params.name,
+            `min: ${formatNumber(min)}`,
+            `Q1: ${formatNumber(q1)}`,
+            `median: ${formatNumber(median)}`,
+            `Q3: ${formatNumber(q3)}`,
+            `max: ${formatNumber(max)}`,
+          ].join("<br>");
+        },
+      },
+      grid: { top: 24, right: 14, bottom: 42, left: 72, containLabel: true },
+      xAxis: {
+        type: "value",
+        max: DISTRIBUTION_MAX_SCORE,
+        name: "VMAF",
+        axisLine: { lineStyle: { color: "#c6cabf" } },
+        splitLine: { lineStyle: { color: "#eceee9" } },
+      },
+      yAxis: {
+        type: "category",
+        data: labels,
+        inverse: true,
+        axisLabel: { interval: 0, overflow: "truncate", width: 92 },
+        axisLine: { lineStyle: { color: "#c6cabf" } },
+      },
+      series: [
+        {
+          name: "Boxplot",
+          type: "boxplot",
+          layout: "horizontal",
+          data,
+        },
+      ],
+    },
+    true,
+  );
+}
+
 function renderDistributionCharts() {
   const rows = visibleRows();
 
@@ -874,10 +962,10 @@ function renderDistributionCharts() {
     return;
   }
 
-  const firstHistogram = state.comparison.histogram[rows[0].id] || [];
-  const labels = firstHistogram.map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
+  renderBoxplotChart(rows);
 
-  emptyChart(charts.boxplot, "Boxplot data pending.");
+  const firstHistogram = focusedHistogramBuckets(rows[0]);
+  const labels = firstHistogram.map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
 
   charts.histogram.setOption(
     {
@@ -902,7 +990,7 @@ function renderDistributionCharts() {
         type: "bar",
         barMaxWidth: 9,
         itemStyle: { color: colorForRow(row) },
-        data: (state.comparison.histogram[row.id] || []).map((bucket) => bucket.count),
+        data: focusedHistogramBuckets(row).map((bucket) => bucket.count),
       })),
     },
     true,
@@ -920,8 +1008,8 @@ function renderDistributionCharts() {
       grid: { top: 24, right: 18, bottom: 52, left: 52, containLabel: true },
       xAxis: {
         type: "value",
-        min: 0,
-        max: 100,
+        min: DISTRIBUTION_MIN_SCORE,
+        max: DISTRIBUTION_MAX_SCORE,
         name: "VMAF",
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
