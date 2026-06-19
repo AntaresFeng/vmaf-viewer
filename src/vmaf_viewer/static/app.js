@@ -877,6 +877,8 @@ function renderDistributionCharts() {
   const firstHistogram = state.comparison.histogram[rows[0].id] || [];
   const labels = firstHistogram.map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
 
+  emptyChart(charts.boxplot, "Boxplot data pending.");
+
   charts.histogram.setOption(
     {
       animation: false,
