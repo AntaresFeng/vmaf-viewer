@@ -39,6 +39,7 @@ const elements = {
   metricToggles: document.getElementById("metricToggles"),
   histogramTab: document.getElementById("histogramTab"),
   cdfTab: document.getElementById("cdfTab"),
+  boxplotChart: document.getElementById("boxplotChart"),
   histogramChart: document.getElementById("histogramChart"),
   cdfChart: document.getElementById("cdfChart"),
   lineChart: document.getElementById("lineChart"),
@@ -48,6 +49,7 @@ const elements = {
 const charts = {
   line: echarts.init(elements.lineChart),
   zoom: echarts.init(elements.zoomChart),
+  boxplot: echarts.init(elements.boxplotChart),
   histogram: echarts.init(elements.histogramChart),
   cdf: echarts.init(elements.cdfChart),
 };
@@ -865,6 +867,7 @@ function renderDistributionCharts() {
   const rows = visibleRows();
 
   if (!state.comparison || !rows.length) {
+    emptyChart(charts.boxplot, "No visible distribution.");
     emptyChart(charts.histogram, "No visible distribution.");
     emptyChart(charts.cdf, "No visible distribution.");
     updateDistributionVisibility();
@@ -949,6 +952,7 @@ function renderCharts() {
   if (!state.comparison) {
     emptyChart(charts.line, "No comparison loaded.");
     emptyChart(charts.zoom, "No comparison loaded.");
+    emptyChart(charts.boxplot, "No comparison loaded.");
     emptyChart(charts.histogram, "No comparison loaded.");
     emptyChart(charts.cdf, "No comparison loaded.");
     updateDistributionVisibility();
@@ -969,6 +973,7 @@ function updateDistributionVisibility() {
   elements.cdfTab.setAttribute("aria-selected", String(!showHistogram));
 
   requestAnimationFrame(() => {
+    charts.boxplot.resize();
     charts.histogram.resize();
     charts.cdf.resize();
   });
