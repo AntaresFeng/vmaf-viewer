@@ -340,23 +340,23 @@ input {
 }
 
 .summary-table td.mean-excellent {
-  color: #48c072;
+  color: #238840;
 }
 
 .summary-table td.mean-good {
-  color: #a6e978;
+  color: #70b864;
 }
 
 .summary-table td.mean-medium {
-  color: #ffdd44;
+  color: #e6c250;
 }
 
 .summary-table td.mean-poor {
-  color: #ff9538;
+  color: #e07355;
 }
 
 .summary-table td.mean-bad {
-  color: #ff5757;
+  color: #b92c2c;
 }
 
 .summary-table td.cell-best {

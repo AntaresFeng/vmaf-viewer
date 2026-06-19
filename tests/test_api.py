@@ -61,6 +61,25 @@ def test_api_compare_returns_summary_and_charts():
     assert set(body["series"]) == {item["id"] for item in files}
 
 
+def test_api_compare_skips_bad_json_and_keeps_valid_results(tmp_path):
+    fixture = Path("tests/fixtures/alpha_vmaf.json")
+    (tmp_path / "alpha_vmaf.json").write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "bad_vmaf.json").write_text("{not json", encoding="utf-8")
+    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
+    files = client.get("/api/files").json()["files"]
+
+    response = client.post(
+        "/api/compare",
+        json={"file_ids": [item["id"] for item in files], "thresholds": [90], "max_points": 100},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [row["name"] for row in body["summary"]] == ["alpha_vmaf.json"]
+    assert set(body["series"]) == {files[0]["id"]}
+    assert body["warnings"] == ["Invalid JSON in bad_vmaf.json"]
+
+
 def test_api_compare_rejects_empty_selection():
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
 
@@ -164,10 +183,11 @@ def test_api_returns_bad_request_for_invalid_frame_num(tmp_path):
 
     assert metrics_response.status_code == 400
     assert series_response.status_code == 400
-    assert compare_response.status_code == 400
+    assert compare_response.status_code == 200
     assert "invalid frameNum" in metrics_response.json()["detail"]
     assert "invalid frameNum" in series_response.json()["detail"]
-    assert "invalid frameNum" in compare_response.json()["detail"]
+    assert compare_response.json()["summary"] == []
+    assert compare_response.json()["warnings"] == ["bad_vmaf.json has invalid frameNum: None"]
 
 
 def test_api_rejects_invalid_max_points():

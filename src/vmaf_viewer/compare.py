@@ -4,6 +4,7 @@ import math
 
 from .cache import VmafCache
 from .models import FileRecord, ParsedVmaf
+from .parser import VmafParseError
 from .stats import build_cdf, build_histogram, downsample_series, finite_values, summarize_values
 
 
@@ -32,7 +33,11 @@ def compare_files(
     warnings: list[str] = []
 
     for record in records:
-        parsed = cache.get(record)
+        try:
+            parsed = cache.get(record)
+        except VmafParseError as exc:
+            warnings.append(str(exc))
+            continue
         selected_metric = _metric_for(parsed, metric)
         if selected_metric is None:
             if metric is None:
