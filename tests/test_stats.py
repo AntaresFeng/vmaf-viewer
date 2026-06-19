@@ -16,6 +16,9 @@ def test_summarize_values_computes_core_stats_and_thresholds():
     assert summary["mean"] == 86.6
     assert summary["min"] == 70.0
     assert summary["max"] == 97.0
+    assert summary["q1"] == 80.0
+    assert summary["median"] == 90.0
+    assert summary["q3"] == 96.0
     assert summary["p1"] == 70.4
     assert summary["p5"] == 72.0
     assert summary["p10"] == 74.0
@@ -39,6 +42,9 @@ def test_summarize_values_handles_empty_or_all_nan_values():
         assert math.isnan(summary["mean"])
         assert math.isnan(summary["min"])
         assert math.isnan(summary["max"])
+        assert math.isnan(summary["q1"])
+        assert math.isnan(summary["median"])
+        assert math.isnan(summary["q3"])
         assert math.isnan(summary["p1"])
         assert summary["thresholds"][90.0] == {"count": 0, "ratio": 0.0}
 
