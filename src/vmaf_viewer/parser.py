@@ -12,16 +12,15 @@ class VmafParseError(ValueError):
     """Raised when a VMAF JSON file cannot be parsed into frame metrics."""
 
 
+_PRIMARY_CANDIDATES = ("vmaf", "vmaf_hd", "vmaf_4k")
+
+
 def select_primary_metric(metric_names: Iterable[str]) -> str | None:
-    names = list(metric_names)
-    if "vmaf" in names:
-        return "vmaf"
-    if "vmaf_hd" in names:
-        return "vmaf_hd"
-    for name in names:
-        if "vmaf" in name:
-            return name
-    return None
+    names = set(metric_names)
+    exact = next((c for c in _PRIMARY_CANDIDATES if c in names), None)
+    if exact:
+        return exact
+    return next((name for name in metric_names if "vmaf" in name), None)
 
 
 def _frame_num(item: dict, fallback: int, record: FileRecord) -> int:

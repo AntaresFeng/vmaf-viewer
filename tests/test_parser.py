@@ -19,6 +19,14 @@ def test_select_primary_metric_falls_back_to_vmaf_hd():
     assert select_primary_metric(["integer_motion", "vmaf_hd"]) == "vmaf_hd"
 
 
+def test_select_primary_metric_falls_back_to_vmaf_4k():
+    assert select_primary_metric(["integer_motion", "vmaf_4k"]) == "vmaf_4k"
+
+
+def test_select_primary_metric_vmaf_4k_beats_substring():
+    assert select_primary_metric(["float_vmaf_custom", "vmaf_4k"]) == "vmaf_4k"
+
+
 def test_select_primary_metric_falls_back_to_first_metric_containing_vmaf():
     assert select_primary_metric(["integer_motion", "float_vmaf_custom"]) == "float_vmaf_custom"
 
