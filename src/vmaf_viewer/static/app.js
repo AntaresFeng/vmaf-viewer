@@ -11,6 +11,7 @@ const COLORS = [
 ];
 const DISTRIBUTION_MIN_SCORE = 50;
 const DISTRIBUTION_MAX_SCORE = 100;
+const DISTRIBUTION_GRID = { top: 36, right: 18, bottom: 42, left: 52, containLabel: true };
 
 const state = {
   files: [],
@@ -678,9 +679,10 @@ function boxplotDataset(rows) {
       continue;
     }
     labels.push(row.name);
+    const color = colorForRow(row);
     data.push({
       value: values,
-      itemStyle: { color: colorForRow(row), borderColor: colorForRow(row) },
+      itemStyle: { color, borderColor: color },
     });
   }
 
@@ -965,15 +967,15 @@ function renderDistributionCharts() {
 
   renderBoxplotChart(rows);
 
-  const firstHistogram = focusedHistogramBuckets(rows[0]);
-  const labels = firstHistogram.map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
+  const rowBuckets = rows.map(focusedHistogramBuckets);
+  const labels = rowBuckets[0].map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
 
   charts.histogram.setOption(
     {
       animation: false,
       color: COLORS,
       tooltip: { trigger: "axis", confine: true },
-      grid: { top: 36, right: 18, bottom: 42, left: 52, containLabel: true },
+      grid: DISTRIBUTION_GRID,
       xAxis: {
         type: "category",
         data: labels,
@@ -986,12 +988,12 @@ function renderDistributionCharts() {
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
       },
-      series: rows.map((row) => ({
+      series: rows.map((row, i) => ({
         name: row.name,
         type: "bar",
         barMaxWidth: 9,
         itemStyle: { color: colorForRow(row) },
-        data: focusedHistogramBuckets(row).map((bucket) => bucket.count),
+        data: rowBuckets[i].map((bucket) => bucket.count),
       })),
     },
     true,
@@ -1006,7 +1008,7 @@ function renderDistributionCharts() {
         confine: true,
         valueFormatter: (value) => `${formatNumber(value)}%`,
       },
-      grid: { top: 36, right: 18, bottom: 42, left: 52, containLabel: true },
+      grid: DISTRIBUTION_GRID,
       xAxis: {
         type: "value",
         min: DISTRIBUTION_MIN_SCORE,
