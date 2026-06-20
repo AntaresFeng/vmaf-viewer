@@ -29,7 +29,9 @@ def _frame_num(item: dict, fallback: int, record: FileRecord) -> int:
     try:
         return int(raw)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise VmafParseError(f"{record.relative_path} has invalid frameNum: {raw!r}") from exc
+        raise VmafParseError(
+            f"{record.relative_path} has invalid frameNum: {raw!r}"
+        ) from exc
 
 
 def parse_vmaf_file(record: FileRecord) -> ParsedVmaf:
@@ -64,7 +66,9 @@ def parse_vmaf_file(record: FileRecord) -> ParsedVmaf:
         for name in metric_names:
             raw = metrics.get(name)
             values[name].append(
-                float(raw) if isinstance(raw, int | float) and not isinstance(raw, bool) else math.nan
+                float(raw)
+                if isinstance(raw, int | float) and not isinstance(raw, bool)
+                else math.nan
             )
 
     return ParsedVmaf(

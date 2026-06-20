@@ -10,8 +10,7 @@ const COLORS = [
   "#b23b32",
 ];
 const DISTRIBUTION_MIN_SCORE = 50;
-const DISTRIBUTION_MAX_SCORE = 100;
-const DISTRIBUTION_GRID = { top: 36, right: 18, bottom: 42, left: 52, containLabel: true };
+const DISTRIBUTION_GRID = { top: "5%", right: "5%", bottom: "5%", left: "5%" };
 
 const state = {
   files: [],
@@ -691,7 +690,7 @@ function boxplotDataset(rows) {
 
 function focusedHistogramBuckets(row) {
   return (state.comparison.histogram[row.id] || []).filter(
-    (bucket) => Number(bucket.end) > DISTRIBUTION_MIN_SCORE && Number(bucket.start) < DISTRIBUTION_MAX_SCORE,
+    (bucket) => Number(bucket.end) > DISTRIBUTION_MIN_SCORE && Number(bucket.start) < 100,
   );
 }
 
@@ -724,25 +723,20 @@ function baseChartOptions() {
       confine: true,
       valueFormatter: (value) => formatNumber(value),
     },
-    grid: {
-      top: 28,
-      right: 22,
-      bottom: 56,
-      left: 52,
-      containLabel: true,
-    },
+    grid: { top: 10, right: 22, bottom: 60, left: 22 },
     xAxis: {
       type: "value",
       name: "Frame",
-      nameGap: 24,
+      nameGap: 6,
       axisLine: { lineStyle: { color: "#c6cabf" } },
       splitLine: { lineStyle: { color: "#eceee9" } },
     },
     yAxis: {
       type: "value",
-      min: 0,
       max: 100,
+      scale: true,
       name: "VMAF",
+      nameGap: 6,
       axisLine: { lineStyle: { color: "#c6cabf" } },
       splitLine: { lineStyle: { color: "#eceee9" } },
     },
@@ -837,7 +831,7 @@ function renderLineCharts() {
       ...baseChartOptions(),
       dataZoom: [
         { type: "inside", filterMode: "none" },
-        { type: "slider", height: 24, bottom: 16, filterMode: "none" },
+        { type: "slider", height: 24, bottom: 12, filterMode: "none" },
       ],
       xAxis: {
         ...baseChartOptions().xAxis,
@@ -854,7 +848,7 @@ function renderLineCharts() {
       ...baseChartOptions(),
       dataZoom: [
         { type: "inside", filterMode: "none" },
-        { type: "slider", height: 26, bottom: 14, brushSelect: true, filterMode: "none" },
+        { type: "slider", height: 24, bottom: 12, filterMode: "none" },
       ],
       xAxis: {
         ...baseChartOptions().xAxis,
@@ -925,11 +919,11 @@ function renderBoxplotChart(rows) {
           ].join("<br>");
         },
       },
-      grid: { top: 24, right: 18, bottom: 42, left: 44, containLabel: true },
+      grid: DISTRIBUTION_GRID,
       xAxis: {
         type: "value",
         scale: true,
-        max: DISTRIBUTION_MAX_SCORE,
+        max: 100,
         name: "VMAF",
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
@@ -1012,7 +1006,7 @@ function renderDistributionCharts() {
       xAxis: {
         type: "value",
         min: DISTRIBUTION_MIN_SCORE,
-        max: DISTRIBUTION_MAX_SCORE,
+        max: 100,
         name: "VMAF",
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },

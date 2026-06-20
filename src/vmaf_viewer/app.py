@@ -60,7 +60,9 @@ class AppState:
         by_id = {record.id: record for record in self.records()}
         missing = [file_id for file_id in file_ids if file_id not in by_id]
         if missing:
-            raise HTTPException(status_code=404, detail=f"Unknown file id: {missing[0]}")
+            raise HTTPException(
+                status_code=404, detail=f"Unknown file id: {missing[0]}"
+            )
         return [by_id[file_id] for file_id in file_ids]
 
 
@@ -89,12 +91,22 @@ def _select_startup_data_dir(
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the local VMAF JSON viewer.")
-    parser.add_argument("positional_data_dir", nargs="?", help="Directory containing *_vmaf.json files.")
-    parser.add_argument("--data-dir", dest="flag_data_dir", help="Directory containing *_vmaf.json files.")
+    parser.add_argument(
+        "positional_data_dir", nargs="?", help="Directory containing *_vmaf.json files."
+    )
+    parser.add_argument(
+        "--data-dir",
+        dest="flag_data_dir",
+        help="Directory containing *_vmaf.json files.",
+    )
     return parser.parse_args(argv)
 
 
-def _file_api(record: FileRecord, total_frames: int | None = None, primary_metric: str | None = None) -> dict:
+def _file_api(
+    record: FileRecord,
+    total_frames: int | None = None,
+    primary_metric: str | None = None,
+) -> dict:
     item = record.to_api()
     if total_frames is not None:
         item["total_frames"] = total_frames
@@ -109,7 +121,9 @@ def _parsed_or_http_error(cache: VmafCache, record: FileRecord) -> ParsedVmaf:
     except VmafParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
-        raise HTTPException(status_code=404, detail=f"Unable to read {record.relative_path}") from exc
+        raise HTTPException(
+            status_code=404, detail=f"Unable to read {record.relative_path}"
+        ) from exc
 
 
 def _files_response(state: AppState) -> dict:
@@ -131,7 +145,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def index() -> FileResponse:
         index_path = static_dir / "index.html"
         if not index_path.exists():
-            raise HTTPException(status_code=404, detail="Viewer frontend is not available yet.")
+            raise HTTPException(
+                status_code=404, detail="Viewer frontend is not available yet."
+            )
         return FileResponse(index_path)
 
     @app.get("/api/files")
@@ -152,7 +168,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @app.post("/api/compare")
     def api_compare(request: CompareRequest) -> dict:
         if not request.file_ids:
-            raise HTTPException(status_code=400, detail="Select at least one VMAF JSON file.")
+            raise HTTPException(
+                status_code=400, detail="Select at least one VMAF JSON file."
+            )
 
         records = state.selected_records(request.file_ids)
         try:
@@ -186,7 +204,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         if request.start < 0:
             raise HTTPException(status_code=400, detail="start must be non-negative")
         if request.end is not None and request.end < request.start:
-            raise HTTPException(status_code=400, detail="end must be greater than or equal to start")
+            raise HTTPException(
+                status_code=400, detail="end must be greater than or equal to start"
+            )
 
         records = state.selected_records(request.file_ids)
         response_series: dict[str, dict[str, dict[str, list[list[float]]]]] = {}
@@ -214,7 +234,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 values = parsed.metrics[metric_name][start_index:stop_index]
 
                 try:
-                    points = downsample_series(frames, values, max_points=request.max_points)
+                    points = downsample_series(
+                        frames, values, max_points=request.max_points
+                    )
                 except ValueError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from exc
                 metric_series[metric_name] = {"points": points}

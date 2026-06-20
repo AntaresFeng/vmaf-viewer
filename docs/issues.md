@@ -3,6 +3,6 @@
 - [ ] Local zoom 功能和 per-frame VMAF 功能略重复，需彻底区分。
   - per-frame VMAF 仅展示 VMAF 曲线，其他子指标不展示，不受下面子指标选择按钮控制。
   - local zoom -> detail view，仅展示子指标，使用双纵坐标轴，区分值域是 0-1 的指标和其他指标。（需探查各种指标的范围再详细设计）
-- [ ] Distribution 横坐标只显示 50-100，此外在 Distribution 左侧加一个视频指标的箱线图。
+- [x] Distribution 横坐标只显示 50-100，此外在 Distribution 左侧加一个视频指标的箱线图。
 - [x] 支持在网页端重新选择扫描目录，使用路径输入 + 后端切换扫描根目录。
 - [x] `#messages` 容器目前有忽隐忽现的情况，最常见的场景是选择 JSON 文件出现 loading，加载完后消失，而且伴随着下方图表元素移动，这不好。我希望它总是常驻显示。loading 结束后可以显示加载了多少帧。请你设计一下。

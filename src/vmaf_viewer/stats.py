@@ -52,7 +52,9 @@ def summarize_values(values: Iterable[float], thresholds: Iterable[float]) -> di
     }
 
 
-def build_histogram(values: Iterable[float], bucket_size: float = 1.0) -> list[dict[str, float | int]]:
+def build_histogram(
+    values: Iterable[float], bucket_size: float = 1.0
+) -> list[dict[str, float | int]]:
     clean = finite_values(values)
     if bucket_size <= 0:
         raise ValueError("bucket_size must be positive")
@@ -74,7 +76,9 @@ def build_histogram(values: Iterable[float], bucket_size: float = 1.0) -> list[d
     return buckets
 
 
-def build_cdf(values: Iterable[float], bucket_size: float = 1.0) -> list[dict[str, float]]:
+def build_cdf(
+    values: Iterable[float], bucket_size: float = 1.0
+) -> list[dict[str, float]]:
     histogram = build_histogram(values, bucket_size=bucket_size)
     total = sum(int(bucket["count"]) for bucket in histogram)
     if total == 0:
@@ -90,11 +94,17 @@ def build_cdf(values: Iterable[float], bucket_size: float = 1.0) -> list[dict[st
     return result
 
 
-def downsample_series(frames: list[int], values: list[float], max_points: int = 2000) -> list[list[float]]:
+def downsample_series(
+    frames: list[int], values: list[float], max_points: int = 2000
+) -> list[list[float]]:
     if max_points < 2:
         raise ValueError("max_points must be at least 2")
 
-    pairs = [[int(frame), float(value)] for frame, value in zip(frames, values) if math.isfinite(float(value))]
+    pairs = [
+        [int(frame), float(value)]
+        for frame, value in zip(frames, values)
+        if math.isfinite(float(value))
+    ]
     if len(pairs) <= max_points:
         return pairs
     if max_points < 4:
