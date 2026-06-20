@@ -923,7 +923,7 @@ function renderBoxplotChart(rows) {
           ].join("<br>");
         },
       },
-      grid: { top: 24, right: 18, bottom: 42, left: 176, containLabel: true },
+      grid: { top: 24, right: 18, bottom: 42, left: 44, containLabel: true },
       xAxis: {
         type: "value",
         max: DISTRIBUTION_MAX_SCORE,
@@ -935,7 +935,8 @@ function renderBoxplotChart(rows) {
         type: "category",
         data: labels,
         inverse: true,
-        axisLabel: { interval: 0, overflow: "truncate", width: 160 },
+        axisLabel: { show: false },
+        axisTick: { show: false },
         axisLine: { lineStyle: { color: "#c6cabf" } },
       },
       series: [
