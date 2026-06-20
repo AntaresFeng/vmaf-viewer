@@ -923,7 +923,7 @@ function renderBoxplotChart(rows) {
           ].join("<br>");
         },
       },
-      grid: { top: 24, right: 14, bottom: 42, left: 72, containLabel: true },
+      grid: { top: 24, right: 18, bottom: 42, left: 176, containLabel: true },
       xAxis: {
         type: "value",
         max: DISTRIBUTION_MAX_SCORE,
@@ -935,7 +935,7 @@ function renderBoxplotChart(rows) {
         type: "category",
         data: labels,
         inverse: true,
-        axisLabel: { interval: 0, overflow: "truncate", width: 92 },
+        axisLabel: { interval: 0, overflow: "truncate", width: 160 },
         axisLine: { lineStyle: { color: "#c6cabf" } },
       },
       series: [
@@ -972,7 +972,7 @@ function renderDistributionCharts() {
       animation: false,
       color: COLORS,
       tooltip: { trigger: "axis", confine: true },
-      grid: { top: 24, right: 18, bottom: 64, left: 52, containLabel: true },
+      grid: { top: 36, right: 18, bottom: 64, left: 52, containLabel: true },
       xAxis: {
         type: "category",
         data: labels,
@@ -982,6 +982,7 @@ function renderDistributionCharts() {
       yAxis: {
         type: "value",
         name: "Frames",
+        nameGap: 12,
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
       },
@@ -1005,7 +1006,7 @@ function renderDistributionCharts() {
         confine: true,
         valueFormatter: (value) => `${formatNumber(value)}%`,
       },
-      grid: { top: 24, right: 18, bottom: 52, left: 52, containLabel: true },
+      grid: { top: 36, right: 18, bottom: 52, left: 52, containLabel: true },
       xAxis: {
         type: "value",
         min: DISTRIBUTION_MIN_SCORE,
@@ -1019,6 +1020,7 @@ function renderDistributionCharts() {
         min: 0,
         max: 100,
         name: "CDF %",
+        nameGap: 12,
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
       },
