@@ -9,7 +9,7 @@ const COLORS = [
   "#6f5b9c",
   "#b23b32",
 ];
-const DISTRIBUTION_MIN_SCORE = 50;
+const DISTRIBUTION_MIN_FLOOR_SCORE = 60;
 const DISTRIBUTION_GRID = { top: "5%", right: "5%", bottom: "5%", left: "5%" };
 
 const state = {
@@ -688,9 +688,17 @@ function boxplotDataset(rows) {
   return { labels, data };
 }
 
-function focusedHistogramBuckets(row) {
+function distributionMinScore(rows) {
+  const mins = rows.map((row) => Number(row.stats && row.stats.min)).filter((value) => Number.isFinite(value));
+  if (!mins.length) {
+    return DISTRIBUTION_MIN_FLOOR_SCORE;
+  }
+  return Math.max(DISTRIBUTION_MIN_FLOOR_SCORE, Math.floor(Math.min(...mins)));
+}
+
+function focusedHistogramBuckets(row, minScore) {
   return (state.comparison.histogram[row.id] || []).filter(
-    (bucket) => Number(bucket.end) > DISTRIBUTION_MIN_SCORE && Number(bucket.start) < 100,
+    (bucket) => Number(bucket.end) > minScore && Number(bucket.start) < 100,
   );
 }
 
@@ -961,7 +969,8 @@ function renderDistributionCharts() {
 
   renderBoxplotChart(rows);
 
-  const rowBuckets = rows.map(focusedHistogramBuckets);
+  const minScore = distributionMinScore(rows);
+  const rowBuckets = rows.map((row) => focusedHistogramBuckets(row, minScore));
   const labels = rowBuckets[0].map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
 
   charts.histogram.setOption(
@@ -1005,7 +1014,7 @@ function renderDistributionCharts() {
       grid: DISTRIBUTION_GRID,
       xAxis: {
         type: "value",
-        min: DISTRIBUTION_MIN_SCORE,
+        min: minScore,
         max: 100,
         name: "VMAF",
         nameGap: 6,
