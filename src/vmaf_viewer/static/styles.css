@@ -469,6 +469,21 @@ input {
   display: none;
 }
 
+.distribution-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.distribution-main {
+  min-width: 0;
+}
+
+.boxplot-chart {
+  height: 340px;
+}
+
 @media (max-width: 900px) {
   .topbar {
     grid-template-columns: 1fr;
@@ -516,5 +531,13 @@ input {
 
   .chart-large {
     height: 360px;
+  }
+
+  .distribution-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .boxplot-chart {
+    height: 260px;
   }
 }

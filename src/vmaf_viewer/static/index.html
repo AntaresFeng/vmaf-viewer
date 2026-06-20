@@ -68,8 +68,13 @@
               <button id="cdfTab" class="tab" type="button" role="tab" aria-selected="false" aria-controls="cdfChart">CDF</button>
             </div>
           </div>
-          <div id="histogramChart" class="chart" role="tabpanel" aria-labelledby="histogramTab"></div>
-          <div id="cdfChart" class="chart is-hidden" role="tabpanel" aria-labelledby="cdfTab"></div>
+          <div class="distribution-layout">
+            <div id="boxplotChart" class="chart boxplot-chart" role="img" aria-label="Video metric boxplot"></div>
+            <div class="distribution-main">
+              <div id="histogramChart" class="chart" role="tabpanel" aria-labelledby="histogramTab"></div>
+              <div id="cdfChart" class="chart is-hidden" role="tabpanel" aria-labelledby="cdfTab"></div>
+            </div>
+          </div>
         </section>
       </main>
     </div>

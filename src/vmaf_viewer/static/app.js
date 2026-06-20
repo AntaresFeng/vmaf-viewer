@@ -9,6 +9,9 @@ const COLORS = [
   "#6f5b9c",
   "#b23b32",
 ];
+const DISTRIBUTION_MIN_SCORE = 50;
+const DISTRIBUTION_MAX_SCORE = 100;
+const DISTRIBUTION_GRID = { top: 36, right: 18, bottom: 42, left: 52, containLabel: true };
 
 const state = {
   files: [],
@@ -39,6 +42,7 @@ const elements = {
   metricToggles: document.getElementById("metricToggles"),
   histogramTab: document.getElementById("histogramTab"),
   cdfTab: document.getElementById("cdfTab"),
+  boxplotChart: document.getElementById("boxplotChart"),
   histogramChart: document.getElementById("histogramChart"),
   cdfChart: document.getElementById("cdfChart"),
   lineChart: document.getElementById("lineChart"),
@@ -48,6 +52,7 @@ const elements = {
 const charts = {
   line: echarts.init(elements.lineChart),
   zoom: echarts.init(elements.zoomChart),
+  boxplot: echarts.init(elements.boxplotChart),
   histogram: echarts.init(elements.histogramChart),
   cdf: echarts.init(elements.cdfChart),
 };
@@ -658,6 +663,38 @@ function visibleRows() {
   return (state.comparison.summary || []).filter((row) => !state.hiddenFiles.has(row.id));
 }
 
+function finiteBoxplotValues(row) {
+  const stats = row.stats || {};
+  const values = [stats.min, stats.q1, stats.median, stats.q3, stats.max].map((value) => Number(value));
+  return values.every((value) => Number.isFinite(value)) ? values : null;
+}
+
+function boxplotDataset(rows) {
+  const labels = [];
+  const data = [];
+
+  for (const row of rows) {
+    const values = finiteBoxplotValues(row);
+    if (!values) {
+      continue;
+    }
+    labels.push(row.name);
+    const color = colorForRow(row);
+    data.push({
+      value: values,
+      itemStyle: { color, borderColor: color },
+    });
+  }
+
+  return { labels, data };
+}
+
+function focusedHistogramBuckets(row) {
+  return (state.comparison.histogram[row.id] || []).filter(
+    (bucket) => Number(bucket.end) > DISTRIBUTION_MIN_SCORE && Number(bucket.start) < DISTRIBUTION_MAX_SCORE,
+  );
+}
+
 function referenceLines() {
   return state.thresholds.map((threshold) => ({
     name: formatThreshold(threshold),
@@ -861,25 +898,84 @@ function renderLineCharts() {
   });
 }
 
+function renderBoxplotChart(rows) {
+  const { labels, data } = boxplotDataset(rows);
+
+  if (!data.length) {
+    emptyChart(charts.boxplot, "No boxplot data.");
+    return;
+  }
+
+  charts.boxplot.setOption(
+    {
+      animation: false,
+      color: COLORS,
+      tooltip: {
+        trigger: "item",
+        confine: true,
+        formatter: (params) => {
+          const [min, q1, median, q3, max] = params.value || [];
+          return [
+            params.name,
+            `min: ${formatNumber(min)}`,
+            `Q1: ${formatNumber(q1)}`,
+            `median: ${formatNumber(median)}`,
+            `Q3: ${formatNumber(q3)}`,
+            `max: ${formatNumber(max)}`,
+          ].join("<br>");
+        },
+      },
+      grid: { top: 24, right: 18, bottom: 42, left: 44, containLabel: true },
+      xAxis: {
+        type: "value",
+        scale: true,
+        max: DISTRIBUTION_MAX_SCORE,
+        name: "VMAF",
+        axisLine: { lineStyle: { color: "#c6cabf" } },
+        splitLine: { lineStyle: { color: "#eceee9" } },
+      },
+      yAxis: {
+        type: "category",
+        data: labels,
+        inverse: true,
+        axisLabel: { interval: 0, overflow: "truncate", width: 60, rotate: 90 },
+        axisLine: { lineStyle: { color: "#c6cabf" } },
+      },
+      series: [
+        {
+          name: "Boxplot",
+          type: "boxplot",
+          layout: "horizontal",
+          data,
+        },
+      ],
+    },
+    true,
+  );
+}
+
 function renderDistributionCharts() {
   const rows = visibleRows();
 
   if (!state.comparison || !rows.length) {
+    emptyChart(charts.boxplot, "No visible distribution.");
     emptyChart(charts.histogram, "No visible distribution.");
     emptyChart(charts.cdf, "No visible distribution.");
     updateDistributionVisibility();
     return;
   }
 
-  const firstHistogram = state.comparison.histogram[rows[0].id] || [];
-  const labels = firstHistogram.map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
+  renderBoxplotChart(rows);
+
+  const rowBuckets = rows.map(focusedHistogramBuckets);
+  const labels = rowBuckets[0].map((bucket) => `${formatThreshold(bucket.start)}-${formatThreshold(bucket.end)}`);
 
   charts.histogram.setOption(
     {
       animation: false,
       color: COLORS,
       tooltip: { trigger: "axis", confine: true },
-      grid: { top: 24, right: 18, bottom: 64, left: 52, containLabel: true },
+      grid: DISTRIBUTION_GRID,
       xAxis: {
         type: "category",
         data: labels,
@@ -892,12 +988,12 @@ function renderDistributionCharts() {
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
       },
-      series: rows.map((row) => ({
+      series: rows.map((row, i) => ({
         name: row.name,
         type: "bar",
         barMaxWidth: 9,
         itemStyle: { color: colorForRow(row) },
-        data: (state.comparison.histogram[row.id] || []).map((bucket) => bucket.count),
+        data: rowBuckets[i].map((bucket) => bucket.count),
       })),
     },
     true,
@@ -912,11 +1008,11 @@ function renderDistributionCharts() {
         confine: true,
         valueFormatter: (value) => `${formatNumber(value)}%`,
       },
-      grid: { top: 24, right: 18, bottom: 52, left: 52, containLabel: true },
+      grid: DISTRIBUTION_GRID,
       xAxis: {
         type: "value",
-        min: 0,
-        max: 100,
+        min: DISTRIBUTION_MIN_SCORE,
+        max: DISTRIBUTION_MAX_SCORE,
         name: "VMAF",
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
@@ -926,6 +1022,7 @@ function renderDistributionCharts() {
         min: 0,
         max: 100,
         name: "CDF %",
+        nameGap: 12,
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
       },
@@ -949,6 +1046,7 @@ function renderCharts() {
   if (!state.comparison) {
     emptyChart(charts.line, "No comparison loaded.");
     emptyChart(charts.zoom, "No comparison loaded.");
+    emptyChart(charts.boxplot, "No comparison loaded.");
     emptyChart(charts.histogram, "No comparison loaded.");
     emptyChart(charts.cdf, "No comparison loaded.");
     updateDistributionVisibility();
@@ -969,6 +1067,7 @@ function updateDistributionVisibility() {
   elements.cdfTab.setAttribute("aria-selected", String(!showHistogram));
 
   requestAnimationFrame(() => {
+    charts.boxplot.resize();
     charts.histogram.resize();
     charts.cdf.resize();
   });

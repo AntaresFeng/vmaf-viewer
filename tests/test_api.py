@@ -58,6 +58,14 @@ def test_api_compare_returns_summary_and_charts():
     body = response.json()
     assert body["common_range"]["frame_count"] == 4
     assert [row["name"] for row in body["summary"]] == ["alpha_vmaf.json", "beta_vmaf.json"]
+    alpha = next(row for row in body["summary"] if row["name"] == "alpha_vmaf.json")
+    beta = next(row for row in body["summary"] if row["name"] == "beta_vmaf.json")
+    assert alpha["stats"]["q1"] == 87.5
+    assert alpha["stats"]["median"] == 93.0
+    assert alpha["stats"]["q3"] == 96.25
+    assert beta["stats"]["q1"] == 88.75
+    assert beta["stats"]["median"] == 90.0
+    assert beta["stats"]["q3"] == 91.25
     assert set(body["series"]) == {item["id"] for item in files}
 
 
