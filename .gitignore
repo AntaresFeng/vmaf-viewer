@@ -17,3 +17,4 @@ venv/
 .worktrees/
 .uv-cache/
 .superpowers/
+docs/superpowers/
