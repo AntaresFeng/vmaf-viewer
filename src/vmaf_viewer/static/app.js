@@ -115,6 +115,18 @@ function formatThreshold(value) {
   return number.toFixed(2).replace(/\.?0+$/, "");
 }
 
+function formatInteger(value) {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function formatFrameValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return String(value ?? "");
+  }
+  return Number.isInteger(number) ? formatInteger(number) : formatThreshold(number);
+}
+
 function formatPercent(value, digits = 1) {
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * 100).toFixed(digits)}%` : "n/a";
@@ -729,6 +741,11 @@ function baseChartOptions() {
     tooltip: {
       trigger: "axis",
       confine: true,
+      axisPointer: {
+        label: {
+          formatter: (params) => formatFrameValue(params.value),
+        },
+      },
       valueFormatter: (value) => formatNumber(value),
     },
     grid: { top: 10, right: 22, bottom: 60, left: 22 },
