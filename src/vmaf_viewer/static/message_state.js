@@ -1,5 +1,5 @@
 (function (global) {
-  const DEFAULT_STATUS_MESSAGE = "Select 1-6 VMAF JSON files to compare.";
+  const DEFAULT_STATUS_MESSAGE = "Select VMAF JSON files to compare.";
 
   function firstText(value) {
     const values = Array.isArray(value) ? value : [value];

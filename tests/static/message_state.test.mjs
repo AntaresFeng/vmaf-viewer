@@ -61,8 +61,8 @@ test("picks the highest priority message", () => {
 test("falls back to the default selection prompt", () => {
   const helpers = loadHelpers();
 
-  assertMessage(helpers.pickMessageState({}), "Select 1-6 VMAF JSON files to compare.", "status");
-  assertMessage(helpers.pickMessageState(), "Select 1-6 VMAF JSON files to compare.", "status");
+  assertMessage(helpers.pickMessageState({}), "Select VMAF JSON files to compare.", "status");
+  assertMessage(helpers.pickMessageState(), "Select VMAF JSON files to compare.", "status");
 });
 
 test("ignores caller-provided constructors", () => {
