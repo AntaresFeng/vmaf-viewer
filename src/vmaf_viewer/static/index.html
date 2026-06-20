@@ -17,7 +17,12 @@
       <input id="scanPathInput" type="text" value="" autocomplete="off" spellcheck="false" aria-label="Scan directory">
       <button id="scanPathButton" class="button button-secondary" type="submit">Scan</button>
     </form>
-    <label class="threshold-control">
+    <label class="topbar-control fps-control">
+      <span class="label">FPS</span>
+      <input id="fpsInput" type="text" value="0" inputmode="numeric" spellcheck="false"
+        aria-label="Frames per second for tooltip time" title="Frames per second for tooltip time">
+    </label>
+    <label class="topbar-control threshold-control">
       <span class="label">Thresholds</span>
       <input id="thresholdInput" type="text" value="95,90,80,60" inputmode="decimal" spellcheck="false">
     </label>

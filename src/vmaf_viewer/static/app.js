@@ -11,6 +11,7 @@ const COLORS = [
 ];
 const DISTRIBUTION_MIN_FLOOR_SCORE = 60;
 const DISTRIBUTION_GRID = { top: "5%", right: "5%", bottom: "5%", left: "5%" };
+const INTEGER_GROUP_RE = /\B(?=(\d{3})+(?!\d))/g;
 
 const state = {
   files: [],
@@ -21,6 +22,7 @@ const state = {
   metricsByFile: new Map(),
   extraSeries: new Map(),
   thresholds: [...DEFAULT_THRESHOLDS],
+  fps: 0,
   distribution: "histogram",
   comparisonRequestId: 0,
   zoomSeriesRequestId: 0,
@@ -30,6 +32,7 @@ const elements = {
   scanPathForm: document.getElementById("scanPathForm"),
   scanPathInput: document.getElementById("scanPathInput"),
   scanPathButton: document.getElementById("scanPathButton"),
+  fpsInput: document.getElementById("fpsInput"),
   thresholdInput: document.getElementById("thresholdInput"),
   refreshButton: document.getElementById("refreshButton"),
   selectedCount: document.getElementById("selectedCount"),
@@ -89,6 +92,12 @@ async function api(path, options = {}) {
   return body;
 }
 
+function applyFpsInput() {
+  state.fps = normalizeFpsValue(elements.fpsInput.value);
+  elements.fpsInput.value = String(state.fps);
+  renderCharts();
+}
+
 function parseThresholds() {
   const values = elements.thresholdInput.value
     .split(",")
@@ -116,7 +125,35 @@ function formatThreshold(value) {
 }
 
 function formatInteger(value) {
-  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return String(value).replace(INTEGER_GROUP_RE, ",");
+}
+
+function normalizeFpsValue(value) {
+  const text = String(value ?? "").trim();
+  if (!/^\d+$/.test(text)) {
+    return 0;
+  }
+  const fps = Number(text);
+  return Number.isSafeInteger(fps) && fps > 0 ? fps : 0;
+}
+
+function padInteger(value, width) {
+  return String(value).padStart(width, "0");
+}
+
+function formatFrameTime(frame, fps) {
+  const totalSeconds = Math.floor(frame / fps);
+  const frameInSecond = frame % fps;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const frameWidth = String(fps - 1).length;
+  const frameSuffix = padInteger(frameInSecond, frameWidth);
+
+  if (hours > 0) {
+    return `${hours}:${padInteger(minutes, 2)}:${padInteger(seconds, 2)}.${frameSuffix}`;
+  }
+  return `${padInteger(minutes, 2)}:${padInteger(seconds, 2)}.${frameSuffix}`;
 }
 
 function formatFrameValue(value) {
@@ -124,7 +161,12 @@ function formatFrameValue(value) {
   if (!Number.isFinite(number)) {
     return String(value ?? "");
   }
-  return Number.isInteger(number) ? formatInteger(number) : formatThreshold(number);
+  if (!Number.isInteger(number)) {
+    return formatThreshold(number);
+  }
+
+  const frameLabel = formatInteger(number);
+  return state.fps > 0 ? `${frameLabel} ${formatFrameTime(number, state.fps)}` : frameLabel;
 }
 
 function formatPercent(value, digits = 1) {
@@ -1122,6 +1164,17 @@ function setupEvents() {
   });
 
   elements.fileFilter.addEventListener("input", renderFiles);
+
+  elements.fpsInput.addEventListener("change", () => {
+    applyFpsInput();
+  });
+
+  elements.fpsInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      elements.fpsInput.blur();
+      applyFpsInput();
+    }
+  });
 
   elements.thresholdInput.addEventListener("change", () => {
     requestComparison();

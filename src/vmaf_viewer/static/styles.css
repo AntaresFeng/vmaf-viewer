@@ -46,7 +46,7 @@ input {
   top: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: auto minmax(300px, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(300px, 1fr) auto auto auto auto;
   gap: 12px;
   align-items: center;
   min-height: 56px;
@@ -69,7 +69,7 @@ input {
   text-transform: uppercase;
 }
 
-.threshold-control {
+.topbar-control {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -100,9 +100,18 @@ input {
   outline: none;
 }
 
+#fpsInput {
+  width: 64px;
+}
+
 #thresholdInput,
 .file-filter {
   width: 120px;
+}
+
+#fpsInput,
+#thresholdInput,
+.file-filter {
   height: 34px;
   padding: 6px 9px;
   color: var(--text);
@@ -113,6 +122,7 @@ input {
 }
 
 #scanPathInput:focus,
+#fpsInput:focus,
 #thresholdInput:focus,
 .file-filter:focus {
   border-color: var(--accent);
@@ -490,12 +500,16 @@ input {
     align-items: stretch;
   }
 
-  .threshold-control {
+  .topbar-control {
     justify-content: space-between;
   }
 
   .scan-path {
     grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  #fpsInput {
+    width: min(100%, 120px);
   }
 
   #thresholdInput {
