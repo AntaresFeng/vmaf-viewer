@@ -8,7 +8,11 @@ from vmaf_viewer.scanner import scan_vmaf_files
 
 
 def _record(name: str):
-    return next(record for record in scan_vmaf_files(Path("tests/fixtures")) if record.name == name)
+    return next(
+        record
+        for record in scan_vmaf_files(Path("tests/fixtures"))
+        if record.name == name
+    )
 
 
 def test_select_primary_metric_prefers_vmaf():
@@ -28,7 +32,10 @@ def test_select_primary_metric_vmaf_4k_beats_substring():
 
 
 def test_select_primary_metric_falls_back_to_first_metric_containing_vmaf():
-    assert select_primary_metric(["integer_motion", "float_vmaf_custom"]) == "float_vmaf_custom"
+    assert (
+        select_primary_metric(["integer_motion", "float_vmaf_custom"])
+        == "float_vmaf_custom"
+    )
 
 
 def test_parse_vmaf_file_extracts_frames_metrics_and_primary_metric():
@@ -70,7 +77,9 @@ def test_parse_vmaf_file_rejects_non_object_root_as_missing_frames(tmp_path):
 
 def test_parse_vmaf_file_rejects_invalid_frame_num(tmp_path):
     bad = tmp_path / "bad_vmaf.json"
-    bad.write_text('{"frames":[{"frameNum":null,"metrics":{"vmaf":99}}]}', encoding="utf-8")
+    bad.write_text(
+        '{"frames":[{"frameNum":null,"metrics":{"vmaf":99}}]}', encoding="utf-8"
+    )
     record = scan_vmaf_files(tmp_path)[0]
 
     with pytest.raises(VmafParseError, match="bad_vmaf.json.*invalid frameNum"):

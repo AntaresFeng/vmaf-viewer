@@ -12,7 +12,10 @@ def test_api_files_returns_scanned_json_files():
 
     assert response.status_code == 200
     body = response.json()
-    assert [item["name"] for item in body["files"]] == ["alpha_vmaf.json", "beta_vmaf.json"]
+    assert [item["name"] for item in body["files"]] == [
+        "alpha_vmaf.json",
+        "beta_vmaf.json",
+    ]
     assert body["data_dir"].endswith("tests/fixtures")
 
 
@@ -20,7 +23,9 @@ def test_api_data_dir_switches_scan_root(tmp_path):
     fixture = Path("tests/fixtures/alpha_vmaf.json")
     new_dir = tmp_path / "new-jsons"
     new_dir.mkdir()
-    (new_dir / "gamma_vmaf.json").write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+    (new_dir / "gamma_vmaf.json").write_text(
+        fixture.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
 
     response = client.post("/api/data-dir", json={"data_dir": str(new_dir)})
@@ -29,7 +34,9 @@ def test_api_data_dir_switches_scan_root(tmp_path):
     body = response.json()
     assert body["data_dir"] == new_dir.resolve().as_posix()
     assert [item["name"] for item in body["files"]] == ["gamma_vmaf.json"]
-    assert [item["name"] for item in client.get("/api/files").json()["files"]] == ["gamma_vmaf.json"]
+    assert [item["name"] for item in client.get("/api/files").json()["files"]] == [
+        "gamma_vmaf.json"
+    ]
 
 
 def test_api_data_dir_rejects_invalid_directory_without_changing_current(tmp_path):
@@ -51,13 +58,20 @@ def test_api_compare_returns_summary_and_charts():
 
     response = client.post(
         "/api/compare",
-        json={"file_ids": [item["id"] for item in files], "thresholds": [95, 90, 80, 60], "max_points": 100},
+        json={
+            "file_ids": [item["id"] for item in files],
+            "thresholds": [95, 90, 80, 60],
+            "max_points": 100,
+        },
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["common_range"]["frame_count"] == 4
-    assert [row["name"] for row in body["summary"]] == ["alpha_vmaf.json", "beta_vmaf.json"]
+    assert [row["name"] for row in body["summary"]] == [
+        "alpha_vmaf.json",
+        "beta_vmaf.json",
+    ]
     alpha = next(row for row in body["summary"] if row["name"] == "alpha_vmaf.json")
     beta = next(row for row in body["summary"] if row["name"] == "beta_vmaf.json")
     assert alpha["stats"]["q1"] == 87.5
@@ -71,14 +85,20 @@ def test_api_compare_returns_summary_and_charts():
 
 def test_api_compare_skips_bad_json_and_keeps_valid_results(tmp_path):
     fixture = Path("tests/fixtures/alpha_vmaf.json")
-    (tmp_path / "alpha_vmaf.json").write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "alpha_vmaf.json").write_text(
+        fixture.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     (tmp_path / "bad_vmaf.json").write_text("{not json", encoding="utf-8")
     client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
     files = client.get("/api/files").json()["files"]
 
     response = client.post(
         "/api/compare",
-        json={"file_ids": [item["id"] for item in files], "thresholds": [90], "max_points": 100},
+        json={
+            "file_ids": [item["id"] for item in files],
+            "thresholds": [90],
+            "max_points": 100,
+        },
     )
 
     assert response.status_code == 200
@@ -100,7 +120,9 @@ def test_api_compare_rejects_empty_selection():
 def test_api_compare_rejects_unknown_file_id():
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
 
-    response = client.post("/api/compare", json={"file_ids": ["missing"], "thresholds": [90]})
+    response = client.post(
+        "/api/compare", json={"file_ids": ["missing"], "thresholds": [90]}
+    )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Unknown file id: missing"
@@ -133,11 +155,17 @@ def test_api_series_returns_requested_metric_range():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["series"][files[0]["id"]]["integer_motion"]["points"] == [[1, 1.5], [2, 2.0], [3, 2.5]]
+    assert body["series"][files[0]["id"]]["integer_motion"]["points"] == [
+        [1, 1.5],
+        [2, 2.0],
+        [3, 2.5],
+    ]
 
 
 def test_index_returns_clear_response_when_frontend_is_missing():
-    client = TestClient(create_app(data_dir=Path("tests/fixtures")), raise_server_exceptions=False)
+    client = TestClient(
+        create_app(data_dir=Path("tests/fixtures")), raise_server_exceptions=False
+    )
 
     response = client.get("/")
 
@@ -195,7 +223,9 @@ def test_api_returns_bad_request_for_invalid_frame_num(tmp_path):
     assert "invalid frameNum" in metrics_response.json()["detail"]
     assert "invalid frameNum" in series_response.json()["detail"]
     assert compare_response.json()["summary"] == []
-    assert compare_response.json()["warnings"] == ["bad_vmaf.json has invalid frameNum: None"]
+    assert compare_response.json()["warnings"] == [
+        "bad_vmaf.json has invalid frameNum: None"
+    ]
 
 
 def test_api_rejects_invalid_max_points():

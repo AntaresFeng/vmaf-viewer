@@ -66,7 +66,9 @@ def extract_frame(input_video: Path, frame_num: int, output_path: Path) -> None:
     subprocess.run(cmd, check=True)
 
 
-def build_target_map(center_frames: Sequence[int], window: int, max_frame: int) -> Dict[int, List[int]]:
+def build_target_map(
+    center_frames: Sequence[int], window: int, max_frame: int
+) -> Dict[int, List[int]]:
     target_map: Dict[int, set] = defaultdict(set)
     for center in center_frames:
         for offset in range(-window, window + 1):
@@ -135,7 +137,9 @@ def main() -> int:
 
     frames_sorted = sorted(frames, key=lambda frame: frame["frameNum"])
     max_frame = max(frame["frameNum"] for frame in frames_sorted)
-    center_frames = [frame["frameNum"] for frame in frames_sorted if frame["vmaf"] <= args.threshold]
+    center_frames = [
+        frame["frameNum"] for frame in frames_sorted if frame["vmaf"] <= args.threshold
+    ]
     if args.limit_centers > 0:
         center_frames = center_frames[: args.limit_centers]
 
@@ -145,9 +149,15 @@ def main() -> int:
     target_map = build_target_map(center_frames, args.window, max_frame)
     target_frames = sorted(target_map)
 
-    output_dir = Path(args.output_dir) if args.output_dir else json_path.with_name(f"{json_path.stem}_frames")
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else json_path.with_name(f"{json_path.stem}_frames")
+    )
     if output_dir.exists() and not args.overwrite:
-        raise SystemExit(f"Output directory already exists: {output_dir} (use --overwrite)")
+        raise SystemExit(
+            f"Output directory already exists: {output_dir} (use --overwrite)"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"JSON: {json_path}")
@@ -161,13 +171,17 @@ def main() -> int:
     print()
 
     index_rows = []
-    video_entries = [("reference", ref_path)] + [(sanitize_name(path.stem), path) for path in distorted_paths]
+    video_entries = [("reference", ref_path)] + [
+        (sanitize_name(path.stem), path) for path in distorted_paths
+    ]
 
     for frame_num in target_frames:
         frame_dir = output_dir / f"frame_{frame_num:06d}"
         frame_dir.mkdir(parents=True, exist_ok=True)
 
-        frame_info = next(frame for frame in frames_sorted if frame["frameNum"] == frame_num)
+        frame_info = next(
+            frame for frame in frames_sorted if frame["frameNum"] == frame_num
+        )
         frame_manifest = {
             "frameNum": frame_num,
             "time": format_time(frame_num, fps),

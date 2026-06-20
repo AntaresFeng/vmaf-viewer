@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import importlib.util
@@ -24,7 +24,9 @@ def tmp_file_for(output: Path) -> Path:
     return output.with_name(f"{output.name}.tmp")
 
 
-def fake_download(monkeypatch: pytest.MonkeyPatch, content: bytes, calls: list[tuple[str, Path, int]]) -> None:
+def fake_download(
+    monkeypatch: pytest.MonkeyPatch, content: bytes, calls: list[tuple[str, Path, int]]
+) -> None:
     def download_file(url: str, destination: Path, *, timeout: int) -> None:
         calls.append((url, Path(destination), timeout))
         Path(destination).write_bytes(content)
@@ -41,7 +43,9 @@ def test_rejects_small_download_without_replacing_existing_file(
     calls: list[tuple[str, Path, int]] = []
 
     monkeypatch.setattr(fetch_echarts, "OUTPUT", output)
-    monkeypatch.setattr(fetch_echarts, "EXPECTED_SHA256", sha256(b"tiny"), raising=False)
+    monkeypatch.setattr(
+        fetch_echarts, "EXPECTED_SHA256", sha256(b"tiny"), raising=False
+    )
     fake_download(monkeypatch, b"tiny", calls)
 
     with pytest.raises(SystemExit, match="unexpectedly small"):
@@ -61,7 +65,9 @@ def test_rejects_hash_mismatch_without_replacing_existing_file(
     calls: list[tuple[str, Path, int]] = []
 
     monkeypatch.setattr(fetch_echarts, "OUTPUT", output)
-    monkeypatch.setattr(fetch_echarts, "EXPECTED_SHA256", sha256(b"different content"), raising=False)
+    monkeypatch.setattr(
+        fetch_echarts, "EXPECTED_SHA256", sha256(b"different content"), raising=False
+    )
     fake_download(monkeypatch, downloaded, calls)
 
     with pytest.raises(SystemExit, match="SHA256 mismatch"):
@@ -79,7 +85,9 @@ def test_verified_download_replaces_final_file_and_removes_temp_file(
     calls: list[tuple[str, Path, int]] = []
 
     monkeypatch.setattr(fetch_echarts, "OUTPUT", output)
-    monkeypatch.setattr(fetch_echarts, "EXPECTED_SHA256", sha256(downloaded), raising=False)
+    monkeypatch.setattr(
+        fetch_echarts, "EXPECTED_SHA256", sha256(downloaded), raising=False
+    )
     fake_download(monkeypatch, downloaded, calls)
 
     fetch_echarts.main()

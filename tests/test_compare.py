@@ -33,7 +33,10 @@ def test_compare_files_uses_shortest_common_range_and_mean_ranking():
     result = compare_files(_records(), cache, thresholds=[95.0, 90.0, 80.0, 60.0])
 
     assert result["common_range"] == {"start": 0, "end": 3, "frame_count": 4}
-    assert [row["name"] for row in result["summary"]] == ["alpha_vmaf.json", "beta_vmaf.json"]
+    assert [row["name"] for row in result["summary"]] == [
+        "alpha_vmaf.json",
+        "beta_vmaf.json",
+    ]
     assert result["summary"][0]["stats"]["mean"] == 90.75
     assert result["summary"][1]["stats"]["mean"] == 90.0
     assert result["warnings"] == ["Frame counts differ; using first 4 common frames."]
