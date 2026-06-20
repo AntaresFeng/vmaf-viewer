@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-EXPECTED_URL = "https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"
+EXPECTED_URL = "https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "devscripts" / "fetch_echarts.py"
 SPEC = importlib.util.spec_from_file_location("fetch_echarts", SCRIPT_PATH)
 assert SPEC is not None

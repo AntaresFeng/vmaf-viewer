@@ -7,8 +7,8 @@ from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ECHARTS_URL = "https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"
-EXPECTED_SHA256 = "bf4a223524e40b77c304bec67e1222cf551f14880cf42c69dc046558e11c07b1"
+ECHARTS_URL = "https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"
+EXPECTED_SHA256 = "b66b25aeb4df84e33199dc21694014d336d222cbd9deb0e5a7c14bd6aa0d0fd0"
 OUTPUT = ROOT / "src/vmaf_viewer/static/vendor/echarts.min.js"
 MIN_SIZE = 500_000
 DOWNLOAD_TIMEOUT = 30

@@ -6,7 +6,7 @@
 
 **Architecture:** Compute quartiles once in the existing backend summary path, then have the frontend derive boxplot data from `summary[].stats`. Keep the boxplot as its own ECharts instance beside the existing Histogram/CDF tab panel, so the current distribution chart code stays readable and no extra per-frame API fetch is needed.
 
-**Tech Stack:** Python 3.11, FastAPI test client, pytest, plain browser JavaScript, vendored ECharts 5.6, static HTML/CSS.
+**Tech Stack:** Python 3.11, FastAPI test client, pytest, plain browser JavaScript, vendored ECharts 6.1, static HTML/CSS.
 
 ---
 
