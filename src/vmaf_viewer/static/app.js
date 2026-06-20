@@ -933,6 +933,7 @@ function renderBoxplotChart(rows) {
         scale: true,
         max: 100,
         name: "VMAF",
+        nameGap: 6,
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
       },
@@ -982,6 +983,8 @@ function renderDistributionCharts() {
       xAxis: {
         type: "category",
         data: labels,
+        name: "VMAF",
+        nameGap: 6,
         axisLabel: { interval: "auto", rotate: 0 },
         axisLine: { lineStyle: { color: "#c6cabf" } },
       },
