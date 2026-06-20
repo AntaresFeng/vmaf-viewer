@@ -973,7 +973,7 @@ function renderDistributionCharts() {
       xAxis: {
         type: "category",
         data: labels,
-        axisLabel: { interval: 9, rotate: 0 },
+        axisLabel: { interval: "auto", rotate: 0 },
         axisLine: { lineStyle: { color: "#c6cabf" } },
       },
       yAxis: {
@@ -1008,6 +1008,7 @@ function renderDistributionCharts() {
         min: DISTRIBUTION_MIN_SCORE,
         max: 100,
         name: "VMAF",
+        nameGap: 6,
         axisLine: { lineStyle: { color: "#c6cabf" } },
         splitLine: { lineStyle: { color: "#eceee9" } },
       },
