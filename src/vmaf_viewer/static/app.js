@@ -439,6 +439,12 @@ function activeDetailMetrics() {
 }
 
 function initializeDefaultDetailMetrics() {
+  const activeMetrics = activeDetailMetrics();
+  if (activeMetrics.length) {
+    state.activeDetailMetrics = new Set(activeMetrics);
+    return activeMetrics;
+  }
+
   const defaults = VmafMetricMetadata.defaultDetailMetrics(sharedMetrics());
   state.activeDetailMetrics = new Set(defaults);
   return defaults;
@@ -674,6 +680,7 @@ function renderControls() {
       <span class="metric-axis-tag metric-axis-tag-${escapeHtml(meta.axisGroup)}">${escapeHtml(meta.axisTag)}</span>
     `;
     chip.addEventListener("click", async () => {
+      const requestId = state.comparisonRequestId;
       const previous = new Set(state.activeDetailMetrics);
       state.activeDetailMetrics = new Set(
         VmafMetricMetadata.toggleDetailMetric([...state.activeDetailMetrics], metric),
@@ -683,8 +690,14 @@ function renderControls() {
           await requestExtraSeries(metric);
         }
       } catch (error) {
+        if (requestId !== state.comparisonRequestId) {
+          return;
+        }
         state.activeDetailMetrics = previous;
         renderMessage({ error: error.message || `Unable to load ${metric}.` });
+      }
+      if (requestId !== state.comparisonRequestId) {
+        return;
       }
       pruneActiveDetailMetrics();
       renderControls();

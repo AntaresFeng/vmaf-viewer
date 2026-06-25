@@ -91,3 +91,61 @@ test("fps changes normalize the input and only refresh charts", () => {
   assert.equal(renderCount, 2);
   assert.equal(comparisonRequests, 0);
 });
+
+test("default detail metrics preserve valid user selection", () => {
+  const { initializeDefaultDetailMetrics, state } = loadAppContext();
+  state.comparison = {
+    summary: [
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
+    ],
+  };
+  state.metricsByFile = new Map([
+    ["a", ["vmaf", "integer_adm2", "integer_adm_scale1", "integer_vif_scale0", "integer_motion2", "psnr_y"]],
+    ["b", ["vmaf", "integer_adm2", "integer_adm_scale1", "integer_vif_scale0", "integer_motion2", "psnr_y"]],
+  ]);
+  state.activeDetailMetrics = new Set(["integer_adm_scale1", "psnr_y"]);
+
+  const metricsToLoad = initializeDefaultDetailMetrics();
+
+  assert.deepEqual(Array.from(metricsToLoad), ["integer_adm_scale1", "psnr_y"]);
+  assert.deepEqual(Array.from(state.activeDetailMetrics), ["integer_adm_scale1", "psnr_y"]);
+});
+
+test("stale detail metric toggle does not prune or render current comparison", async () => {
+  let renderControlsCount = 0;
+  let renderChartsCount = 0;
+  let resolveSeries;
+  const { elements, renderControls, state } = loadAppContext({
+    renderCharts: () => {
+      renderChartsCount += 1;
+    },
+    renderControls: () => {
+      renderControlsCount += 1;
+    },
+    requestExtraSeries: () =>
+      new Promise((resolve) => {
+        resolveSeries = resolve;
+      }),
+  });
+  state.comparisonRequestId = 1;
+  state.comparison = { summary: [{ id: "a", name: "A" }] };
+  state.metricsByFile = new Map([["a", ["integer_adm2", "psnr_y"]]]);
+  state.activeDetailMetrics = new Set(["integer_adm2"]);
+  renderControls();
+
+  const psnrToggle = elements.metricToggles.children.find((chip) => chip.title.startsWith("psnr_y"));
+  assert.ok(psnrToggle);
+  const clickPromise = psnrToggle.listeners.click();
+
+  state.comparisonRequestId = 2;
+  state.comparison = { summary: [{ id: "b", name: "B" }] };
+  state.metricsByFile = new Map();
+  state.activeDetailMetrics = new Set(["integer_adm2"]);
+  resolveSeries();
+  await clickPromise;
+
+  assert.deepEqual([...state.activeDetailMetrics], ["integer_adm2"]);
+  assert.equal(renderControlsCount, 0);
+  assert.equal(renderChartsCount, 0);
+});
