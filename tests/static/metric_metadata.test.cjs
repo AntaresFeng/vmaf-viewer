@@ -39,6 +39,14 @@ test("classifies raw metrics and rejects model scores or unknown metrics", () =>
     axisName: "Motion",
     unit: "",
   });
+  assert.deepEqual(metadata.metricMeta("integer_motion3"), {
+    family: "motion",
+    axisGroup: "raw",
+    yAxisIndex: 1,
+    axisTag: "motion",
+    axisName: "Motion",
+    unit: "",
+  });
   assert.deepEqual(metadata.metricMeta("psnr_y"), {
     family: "psnr",
     axisGroup: "raw",
@@ -54,8 +62,8 @@ test("classifies raw metrics and rejects model scores or unknown metrics", () =>
 
 test("filters recognized detail metrics only", () => {
   assert.deepEqual(
-    metadata.detailMetrics(["vmaf", "integer_adm2", "integer_motion2", "psnr_y", "unknown_metric"]),
-    ["integer_adm2", "integer_motion2", "psnr_y"],
+    metadata.detailMetrics(["vmaf", "integer_adm2", "integer_motion2", "integer_motion3", "psnr_y", "unknown_metric"]),
+    ["integer_adm2", "integer_motion2", "integer_motion3", "psnr_y"],
   );
 });
 
@@ -95,6 +103,10 @@ test("toggleDetailMetric enforces Motion and PSNR mutual exclusion", () => {
   assert.deepEqual(
     metadata.toggleDetailMetric(["integer_adm2", "psnr_y", "psnr_cb"], "integer_motion"),
     ["integer_adm2", "integer_motion"],
+  );
+  assert.deepEqual(
+    metadata.toggleDetailMetric(["integer_adm2", "psnr_y"], "integer_motion3"),
+    ["integer_adm2", "integer_motion3"],
   );
   assert.deepEqual(
     metadata.toggleDetailMetric(["integer_adm2", "integer_vif_scale0"], "integer_vif_scale0"),

@@ -50,7 +50,7 @@
       return { family, ...NORMALIZED_AXIS };
     }
 
-    if (/^integer_motion2?$/.test(metric)) {
+    if (/^integer_motion[0-9]*$/.test(metric)) {
       return { family: "motion", ...RAW_AXES.motion };
     }
 
