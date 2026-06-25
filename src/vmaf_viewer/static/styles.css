@@ -469,6 +469,14 @@ input {
   border: 1px solid var(--border);
 }
 
+.metric-chip .metric-axis-tag {
+  flex: 0 0 auto;
+  min-width: auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
 .metric-axis-tag-normalized {
   color: #24736f;
   border-color: #8dbdb6;
