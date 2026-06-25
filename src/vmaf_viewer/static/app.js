@@ -18,7 +18,7 @@ const state = {
   selected: new Set(),
   comparison: null,
   hiddenFiles: new Set(),
-  activeMetrics: new Set(["primary"]),
+  activeDetailMetrics: new Set(),
   metricsByFile: new Map(),
   extraSeries: new Map(),
   thresholds: [...DEFAULT_THRESHOLDS],
@@ -221,7 +221,7 @@ function resetComparisonState() {
   state.selected.clear();
   state.comparison = null;
   state.hiddenFiles.clear();
-  state.activeMetrics = new Set(["primary"]);
+  state.activeDetailMetrics.clear();
   state.metricsByFile.clear();
   state.extraSeries.clear();
   state.comparisonRequestId += 1;
@@ -380,7 +380,11 @@ async function requestComparison() {
 
     const comparedIds = new Set(comparedFileIds);
     state.hiddenFiles = new Set([...state.hiddenFiles].filter((id) => comparedIds.has(id)));
-    pruneActiveMetrics();
+    const defaultMetrics = initializeDefaultDetailMetrics();
+    await requestExtraSeriesForMetrics(defaultMetrics);
+    if (requestId !== state.comparisonRequestId) {
+      return;
+    }
 
     renderMessage({
       warnings: body.warnings || [],
@@ -429,25 +433,32 @@ function sharedMetrics() {
   return first.filter((metric) => metricSets.every((set) => set.has(metric)));
 }
 
-function activeExtraMetrics() {
-  const shared = new Set(sharedMetrics());
-  return [...state.activeMetrics].filter((metric) => metric !== "primary" && shared.has(metric));
+function activeDetailMetrics() {
+  const shared = sharedMetrics();
+  return VmafMetricMetadata.normalizeDetailSelection([...state.activeDetailMetrics], shared);
 }
 
-function pruneActiveMetrics() {
-  const allowed = new Set(["primary", ...sharedMetrics()]);
-  state.activeMetrics = new Set([...state.activeMetrics].filter((metric) => allowed.has(metric)));
-  if (!state.activeMetrics.size) {
-    state.activeMetrics.add("primary");
-  }
+function initializeDefaultDetailMetrics() {
+  const defaults = VmafMetricMetadata.defaultDetailMetrics(sharedMetrics());
+  state.activeDetailMetrics = new Set(defaults);
+  return defaults;
+}
+
+function pruneActiveDetailMetrics() {
+  state.activeDetailMetrics = new Set(activeDetailMetrics());
 }
 
 async function requestExtraSeries(metric, range = null) {
-  const fileIds = comparedFileIds();
-  if (!state.comparison || !fileIds.length) {
+  if (!range && state.extraSeries.has(metric)) {
     return;
   }
-  if (!range && state.extraSeries.has(metric)) {
+  await requestExtraSeriesForMetrics([metric], range);
+}
+
+async function requestExtraSeriesForMetrics(metrics, range = null) {
+  const fileIds = comparedFileIds();
+  const requestedMetrics = metrics.filter((metric) => range || !state.extraSeries.has(metric));
+  if (!state.comparison || !requestedMetrics.length || !fileIds.length) {
     return;
   }
 
@@ -457,7 +468,7 @@ async function requestExtraSeries(metric, range = null) {
     method: "POST",
     body: {
       file_ids: fileIds,
-      metrics: [metric],
+      metrics: requestedMetrics,
       start: range ? range.start : commonRange.start || 0,
       end: range ? range.end : commonRange.end,
       max_points: range ? 5000 : 2000,
@@ -467,33 +478,13 @@ async function requestExtraSeries(metric, range = null) {
   if (range && requestId !== state.zoomSeriesRequestId) {
     return;
   }
-  state.extraSeries.set(metric, body.series || {});
+  for (const metric of requestedMetrics) {
+    state.extraSeries.set(metric, body.series || {});
+  }
 }
 
 async function requestExtraSeriesForRange(metrics, range) {
-  const fileIds = comparedFileIds();
-  if (!state.comparison || !metrics.length || !fileIds.length) {
-    return;
-  }
-
-  const requestId = ++state.zoomSeriesRequestId;
-  const body = await api("/api/series", {
-    method: "POST",
-    body: {
-      file_ids: fileIds,
-      metrics,
-      start: range.start,
-      end: range.end,
-      max_points: 5000,
-    },
-  });
-
-  if (requestId !== state.zoomSeriesRequestId) {
-    return;
-  }
-  for (const metric of metrics) {
-    state.extraSeries.set(metric, body.series || {});
-  }
+  await requestExtraSeriesForMetrics(metrics, range);
 }
 
 function thresholdEntry(stats, threshold) {
@@ -666,42 +657,33 @@ function renderControls() {
     elements.videoLegend.appendChild(chip);
   });
 
-  const primaryChip = document.createElement("button");
-  primaryChip.type = "button";
-  primaryChip.className = `chip${state.activeMetrics.has("primary") ? " is-active" : " is-muted"}`;
-  primaryChip.setAttribute("aria-pressed", String(state.activeMetrics.has("primary")));
-  primaryChip.textContent = "Primary VMAF";
-  primaryChip.addEventListener("click", () => {
-    if (state.activeMetrics.has("primary")) {
-      state.activeMetrics.delete("primary");
-    } else {
-      state.activeMetrics.add("primary");
-    }
-    renderControls();
-    renderCharts();
-  });
-  elements.metricToggles.appendChild(primaryChip);
-
-  const metrics = sharedMetrics().filter((metric) => metric !== "vmaf");
+  const metrics = VmafMetricMetadata.detailMetrics(sharedMetrics());
   for (const metric of metrics) {
-    const isActive = state.activeMetrics.has(metric);
+    const meta = VmafMetricMetadata.metricMeta(metric);
+    const isActive = state.activeDetailMetrics.has(metric);
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = `chip${isActive ? " is-active" : " is-muted"}`;
+    chip.className = `chip metric-chip${isActive ? " is-active" : " is-muted"}`;
     chip.setAttribute("aria-pressed", String(isActive));
-    chip.textContent = metric;
+    chip.title = `${metric} · ${meta.axisName}`;
+    chip.innerHTML = `
+      <span class="metric-name">${escapeHtml(metric)}</span>
+      <span class="metric-axis-tag metric-axis-tag-${escapeHtml(meta.axisGroup)}">${escapeHtml(meta.axisTag)}</span>
+    `;
     chip.addEventListener("click", async () => {
-      if (state.activeMetrics.has(metric)) {
-        state.activeMetrics.delete(metric);
-      } else {
-        state.activeMetrics.add(metric);
-        try {
+      const previous = new Set(state.activeDetailMetrics);
+      state.activeDetailMetrics = new Set(
+        VmafMetricMetadata.toggleDetailMetric([...state.activeDetailMetrics], metric),
+      );
+      try {
+        if (state.activeDetailMetrics.has(metric)) {
           await requestExtraSeries(metric);
-        } catch (error) {
-          state.activeMetrics.delete(metric);
-          renderMessage({ error: error.message || `Unable to load ${metric}.` });
         }
+      } catch (error) {
+        state.activeDetailMetrics = previous;
+        renderMessage({ error: error.message || `Unable to load ${metric}.` });
       }
+      pruneActiveDetailMetrics();
       renderControls();
       renderCharts();
     });
@@ -827,9 +809,6 @@ function emptyChart(chart, text) {
 }
 
 function primaryLineSeries(rows) {
-  if (!state.activeMetrics.has("primary")) {
-    return [];
-  }
   return rows.map((row) => {
     const series = state.comparison.series[row.id] || {};
     const color = colorForRow(row);
@@ -849,7 +828,7 @@ function primaryLineSeries(rows) {
 
 function extraMetricLineSeries(rows) {
   const series = [];
-  for (const metric of activeExtraMetrics()) {
+  for (const metric of activeDetailMetrics()) {
     const metricSeries = state.extraSeries.get(metric) || {};
     for (const row of rows) {
       const color = colorForRow(row);
@@ -929,7 +908,7 @@ function renderLineCharts() {
 
   charts.zoom.off("datazoom");
   charts.zoom.on("datazoom", async () => {
-    const metrics = activeExtraMetrics();
+    const metrics = activeDetailMetrics();
     if (!state.comparison || !metrics.length) {
       return;
     }
