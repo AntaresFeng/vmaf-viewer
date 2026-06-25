@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
 
-function loadHelpers() {
-  const source = readFileSync("src/vmaf_viewer/static/message_state.js", "utf8");
-  const context = {};
-  vm.createContext(context);
-  vm.runInContext(source, context);
+import { loadBrowserScripts } from "./browser_harness.mjs";
+
+function loadMessageState() {
+  const { context } = loadBrowserScripts(["src/vmaf_viewer/static/message_state.js"]);
   return context.VmafMessageState;
 }
 
@@ -17,7 +14,7 @@ function assertMessage(actual, expectedText, expectedType) {
 }
 
 test("picks the highest priority message", () => {
-  const helpers = loadHelpers();
+  const helpers = loadMessageState();
 
   assertMessage(
     helpers.pickMessageState({
@@ -59,14 +56,14 @@ test("picks the highest priority message", () => {
 });
 
 test("falls back to the default selection prompt", () => {
-  const helpers = loadHelpers();
+  const helpers = loadMessageState();
 
   assertMessage(helpers.pickMessageState({}), "Select VMAF JSON files to compare.", "status");
   assertMessage(helpers.pickMessageState(), "Select VMAF JSON files to compare.", "status");
 });
 
 test("ignores caller-provided constructors", () => {
-  const helpers = loadHelpers();
+  const helpers = loadMessageState();
 
   assertMessage(
     helpers.pickMessageState({
@@ -81,7 +78,7 @@ test("ignores caller-provided constructors", () => {
 });
 
 test("formats loaded comparison summaries in English", () => {
-  const helpers = loadHelpers();
+  const helpers = loadMessageState();
 
   assert.equal(
     helpers.formatLoadedMessage([{ common_frames: 4 }, { common_frames: 4 }]),

@@ -1,80 +1,21 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+
+import { loadAppContext as loadHarnessAppContext } from "./browser_harness.mjs";
+
+const APP_EXPORTS = [
+  "baseChartOptions",
+  "elements",
+  "formatFrameValue",
+  "initializeDefaultDetailMetrics",
+  "normalizeFpsValue",
+  "renderControls",
+  "setupEvents",
+  "state",
+];
 
 function loadAppContext(extraGlobals = {}) {
-  const source = readFileSync("src/vmaf_viewer/static/app.js", "utf8");
-  const initIndex = source.indexOf("\nsetupEvents();");
-  assert.notEqual(initIndex, -1);
-
-  const elements = new Map();
-  const document = {
-    body: {},
-    getElementById(id) {
-      if (!elements.has(id)) {
-        elements.set(id, {
-          id,
-          value: "",
-          listeners: {},
-          addEventListener(eventName, handler) {
-            this.listeners[eventName] = handler;
-          },
-          blur() {
-            this.didBlur = true;
-          },
-        });
-      }
-      return elements.get(id);
-    },
-  };
-
-  const context = {
-    document,
-    echarts: {
-      init() {
-        return {
-          clear() {},
-          off() {},
-          on() {},
-          resize() {},
-          setOption() {},
-          getOption() {
-            return {};
-          },
-        };
-      },
-    },
-    getComputedStyle() {
-      return { fontFamily: "sans-serif" };
-    },
-    requestAnimationFrame(callback) {
-      callback();
-    },
-    window: {
-      addEventListener() {},
-    },
-    ...extraGlobals,
-  };
-
-  vm.createContext(context);
-  vm.runInContext(
-    `${source.slice(0, initIndex)}
-globalThis.__exports = {
-  baseChartOptions,
-  elements,
-  formatFrameValue,
-  normalizeFpsValue,
-  setupEvents,
-  state,
-};`,
-    context,
-  );
-  // Re-apply extra globals overwritten by function declarations in source
-  for (const [key, value] of Object.entries(extraGlobals)) {
-    context[key] = value;
-  }
-  return context.__exports;
+  return loadHarnessAppContext(APP_EXPORTS, extraGlobals).exports;
 }
 
 test("formats frame axis pointer label as grouped integer frames without fps", () => {
