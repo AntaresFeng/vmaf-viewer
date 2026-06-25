@@ -12,6 +12,22 @@ test("classifies normalized metrics and EGL variants", () => {
     axisName: "ADM / VIF / AIM",
     unit: "",
   });
+  assert.deepEqual(metadata.metricMeta("integer_adm3"), {
+    family: "adm",
+    axisGroup: "normalized",
+    yAxisIndex: 0,
+    axisTag: "0-1",
+    axisName: "ADM / VIF / AIM",
+    unit: "",
+  });
+  assert.deepEqual(metadata.metricMeta("integer_adm3_egl_1"), {
+    family: "adm",
+    axisGroup: "normalized",
+    yAxisIndex: 0,
+    axisTag: "0-1",
+    axisName: "ADM / VIF / AIM",
+    unit: "",
+  });
   assert.deepEqual(metadata.metricMeta("integer_vif_scale2_egl_1"), {
     family: "vif",
     axisGroup: "normalized",
@@ -57,6 +73,7 @@ test("classifies raw metrics and rejects model scores or unknown metrics", () =>
   });
   assert.equal(metadata.metricMeta("vmaf"), null);
   assert.equal(metadata.metricMeta("vmaf_hd"), null);
+  assert.equal(metadata.metricMeta("psnr"), null);
   assert.equal(metadata.metricMeta("unknown_metric"), null);
 });
 

@@ -54,7 +54,7 @@
       return { family: "motion", ...RAW_AXES.motion };
     }
 
-    if (/^psnr(?:_[a-z0-9]+)?$/.test(metric)) {
+    if (/^psnr_[a-z0-9]+$/.test(metric)) {
       return { family: "psnr", ...RAW_AXES.psnr };
     }
 
@@ -62,7 +62,7 @@
   }
 
   function normalizedFamily(metric) {
-    if (/^integer_adm(?:2|_scale[0-9])(?:_egl_[0-9]+)?$/.test(metric)) {
+    if (/^integer_adm(?:[0-9]+|_scale[0-9])(?:_egl_[0-9]+)?$/.test(metric)) {
       return "adm";
     }
     if (/^integer_vif_scale[0-9](?:_egl_[0-9]+)?$/.test(metric)) {
