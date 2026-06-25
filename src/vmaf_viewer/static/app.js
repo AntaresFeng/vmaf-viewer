@@ -381,7 +381,7 @@ async function requestComparison() {
     const comparedIds = new Set(comparedFileIds);
     state.hiddenFiles = new Set([...state.hiddenFiles].filter((id) => comparedIds.has(id)));
     const defaultMetrics = initializeDefaultDetailMetrics();
-    await requestExtraSeriesForMetrics(defaultMetrics);
+    await requestExtraSeriesForMetrics(defaultMetrics, null, requestId);
     if (requestId !== state.comparisonRequestId) {
       return;
     }
@@ -455,7 +455,7 @@ async function requestExtraSeries(metric, range = null) {
   await requestExtraSeriesForMetrics([metric], range);
 }
 
-async function requestExtraSeriesForMetrics(metrics, range = null) {
+async function requestExtraSeriesForMetrics(metrics, range = null, expectedComparisonRequestId = state.comparisonRequestId) {
   const fileIds = comparedFileIds();
   const requestedMetrics = metrics.filter((metric) => range || !state.extraSeries.has(metric));
   if (!state.comparison || !requestedMetrics.length || !fileIds.length) {
@@ -475,6 +475,9 @@ async function requestExtraSeriesForMetrics(metrics, range = null) {
     },
   });
 
+  if (expectedComparisonRequestId !== state.comparisonRequestId) {
+    return;
+  }
   if (range && requestId !== state.zoomSeriesRequestId) {
     return;
   }
