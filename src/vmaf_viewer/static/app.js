@@ -26,6 +26,7 @@ const state = {
   distribution: "histogram",
   comparisonRequestId: 0,
   zoomSeriesRequestId: 0,
+  renderedDetailSeriesIds: new Set(),
 };
 
 const elements = {
@@ -488,12 +489,50 @@ async function requestExtraSeriesForMetrics(metrics, range = null, expectedCompa
     return;
   }
   for (const metric of requestedMetrics) {
-    state.extraSeries.set(metric, body.series || {});
+    const series = body.series || {};
+    state.extraSeries.set(metric, range ? mergeMetricSeries(state.extraSeries.get(metric), series, metric) : series);
   }
 }
 
 async function requestExtraSeriesForRange(metrics, range) {
   await requestExtraSeriesForMetrics(metrics, range);
+}
+
+function mergeMetricSeries(existingSeries = {}, incomingSeries = {}, metric) {
+  const mergedSeries = { ...existingSeries };
+
+  for (const [fileId, incomingMetrics] of Object.entries(incomingSeries || {})) {
+    const incomingMetric = incomingMetrics && incomingMetrics[metric];
+    if (!incomingMetric) {
+      continue;
+    }
+
+    const existingMetrics = mergedSeries[fileId] || {};
+    const existingMetric = existingMetrics[metric] || {};
+    mergedSeries[fileId] = {
+      ...existingMetrics,
+      [metric]: {
+        ...existingMetric,
+        ...incomingMetric,
+        points: mergeSeriesPoints(existingMetric.points, incomingMetric.points),
+      },
+    };
+  }
+
+  return mergedSeries;
+}
+
+function mergeSeriesPoints(existingPoints = [], incomingPoints = []) {
+  const pointsByFrame = new Map();
+
+  for (const point of [...(existingPoints || []), ...(incomingPoints || [])]) {
+    if (!Array.isArray(point) || !point.length) {
+      continue;
+    }
+    pointsByFrame.set(point[0], point);
+  }
+
+  return [...pointsByFrame.values()].sort((left, right) => Number(left[0]) - Number(right[0]));
 }
 
 function thresholdEntry(stats, threshold) {
@@ -903,6 +942,7 @@ function detailMetricLineSeries(rows) {
     for (const row of rows) {
       const color = colorForRow(row);
       series.push({
+        id: `${row.id}:${metric}`,
         name: `${row.name} ${metric} · ${meta.axisTag}`,
         type: "line",
         yAxisIndex: meta.yAxisIndex,
@@ -930,11 +970,22 @@ function detailViewSeries(rows) {
   return detailMetricLineSeries(rows);
 }
 
+function detailSeriesForMerge(detailSeries) {
+  const nextIds = new Set(detailSeries.map((series) => series.id).filter(Boolean));
+  const removedSeries = [...state.renderedDetailSeriesIds]
+    .filter((id) => !nextIds.has(id))
+    .map((id) => ({ id, type: "line", data: [] }));
+
+  state.renderedDetailSeriesIds = nextIds;
+  return [...detailSeries, ...removedSeries];
+}
+
 function renderLineCharts() {
   const rows = visibleRows();
   charts.zoom.off("datazoom");
 
   if (!state.comparison || !rows.length) {
+    state.renderedDetailSeriesIds = new Set();
     emptyChart(charts.line, "No visible VMAF series.");
     emptyChart(charts.zoom, "No visible VMAF series.");
     return;
@@ -967,27 +1018,25 @@ function renderLineCharts() {
 
   const detailSeries = detailViewSeries(rows);
   if (!detailSeries.length) {
+    state.renderedDetailSeriesIds = new Set();
     emptyChart(charts.zoom, "No active detail metrics.");
     return;
   }
 
   const detailOptions = detailChartOptions();
-  charts.zoom.setOption(
-    {
-      ...detailOptions,
-      dataZoom: [
-        { type: "inside", filterMode: "none" },
-        { type: "slider", height: 24, bottom: 12, filterMode: "none" },
-      ],
-      xAxis: {
-        ...detailOptions.xAxis,
-        min: commonRange.start || 0,
-        max: commonRange.end || undefined,
-      },
-      series: detailSeries,
+  charts.zoom.setOption({
+    ...detailOptions,
+    dataZoom: [
+      { type: "inside", filterMode: "none" },
+      { type: "slider", height: 24, bottom: 12, filterMode: "none" },
+    ],
+    xAxis: {
+      ...detailOptions.xAxis,
+      min: commonRange.start || 0,
+      max: commonRange.end || undefined,
     },
-    true,
-  );
+    series: detailSeriesForMerge(detailSeries),
+  });
 
   charts.zoom.on("datazoom", async () => {
     const metrics = activeDetailMetrics();

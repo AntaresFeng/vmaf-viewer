@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadAppContext as loadHarnessAppContext } from "./browser_harness.mjs";
+import { loadAppContext as loadHarnessAppContext, toHostValue } from "./browser_harness.mjs";
 
 const APP_EXPORTS = [
   "baseChartOptions",
+  "charts",
   "elements",
   "formatFrameValue",
   "initializeDefaultDetailMetrics",
   "normalizeFpsValue",
+  "renderLineCharts",
+  "requestExtraSeriesForRange",
   "renderControls",
   "setupEvents",
   "state",
@@ -148,4 +151,153 @@ test("stale detail metric toggle does not prune or render current comparison", a
   assert.deepEqual([...state.activeDetailMetrics], ["integer_adm2"]);
   assert.equal(renderControlsCount, 0);
   assert.equal(renderChartsCount, 0);
+});
+
+test("detail chart rerenders in merge mode so dataZoom slider state is preserved", () => {
+  const createdCharts = [];
+  const { renderLineCharts, state } = loadAppContext({
+    echarts: {
+      init() {
+        const chart = {
+          offCalls: [],
+          onCalls: [],
+          setOptionCalls: [],
+          clearCalls: 0,
+          clear() {
+            this.clearCalls += 1;
+          },
+          off(eventName) {
+            this.offCalls.push(eventName);
+          },
+          on(eventName, handler) {
+            this.onCalls.push([eventName, handler]);
+          },
+          resize() {},
+          setOption(...args) {
+            this.setOptionCalls.push(args);
+          },
+          getOption() {
+            return {};
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+  });
+  const [overviewChart, detailChart] = createdCharts;
+  state.comparison = {
+    common_range: { start: 0, end: 100 },
+    summary: [{ id: "a", name: "A" }],
+    series: { a: { points: [[0, 95], [100, 90]] } },
+  };
+  state.metricsByFile = new Map([["a", ["vmaf", "integer_motion"]]]);
+  state.activeDetailMetrics = new Set(["integer_motion"]);
+  state.extraSeries = new Map([
+    ["integer_motion", { a: { integer_motion: { points: [[0, 1], [100, 2]] } } }],
+  ]);
+
+  renderLineCharts();
+
+  assert.equal(overviewChart.setOptionCalls.at(-1)[1], true);
+  assert.equal(detailChart.setOptionCalls.at(-1)[1], undefined);
+  assert.deepEqual(detailChart.onCalls.at(-1)[0], "datazoom");
+});
+
+test("range detail series requests merge into existing full-range cache", async () => {
+  const { requestExtraSeriesForRange, state } = loadAppContext({
+    fetch: async () => ({
+      ok: true,
+      async text() {
+        return JSON.stringify({
+          series: {
+            a: {
+              integer_motion: {
+                points: [[50, 5], [51, 6]],
+              },
+            },
+          },
+        });
+      },
+    }),
+  });
+  state.comparisonRequestId = 1;
+  state.comparison = {
+    common_range: { start: 0, end: 100 },
+    summary: [{ id: "a", name: "A" }],
+  };
+  state.selected = new Set(["a"]);
+  state.extraSeries = new Map([
+    [
+      "integer_motion",
+      {
+        a: {
+          integer_motion: {
+            points: [[0, 1], [100, 2]],
+          },
+        },
+      },
+    ],
+  ]);
+
+  await requestExtraSeriesForRange(["integer_motion"], { start: 50, end: 51 });
+
+  assert.deepEqual(toHostValue(state.extraSeries.get("integer_motion")), {
+    a: {
+      integer_motion: {
+        points: [[0, 1], [50, 5], [51, 6], [100, 2]],
+      },
+    },
+  });
+});
+
+test("detail chart clears removed metric series while using merge mode", () => {
+  const createdCharts = [];
+  const { renderLineCharts, state } = loadAppContext({
+    echarts: {
+      init() {
+        const chart = {
+          setOptionCalls: [],
+          clear() {},
+          off() {},
+          on() {},
+          resize() {},
+          setOption(...args) {
+            this.setOptionCalls.push(args);
+          },
+          getOption() {
+            return {};
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+  });
+  const detailChart = createdCharts[1];
+  state.comparison = {
+    common_range: { start: 0, end: 100 },
+    summary: [{ id: "a", name: "A" }],
+    series: { a: { points: [[0, 95], [100, 90]] } },
+  };
+  state.metricsByFile = new Map([["a", ["vmaf", "integer_adm2", "integer_motion"]]]);
+  state.extraSeries = new Map([
+    ["integer_adm2", { a: { integer_adm2: { points: [[0, 0.9], [100, 0.8]] } } }],
+    ["integer_motion", { a: { integer_motion: { points: [[0, 1], [100, 2]] } } }],
+  ]);
+
+  state.activeDetailMetrics = new Set(["integer_adm2", "integer_motion"]);
+  renderLineCharts();
+  state.activeDetailMetrics = new Set(["integer_adm2"]);
+  renderLineCharts();
+
+  const series = detailChart.setOptionCalls.at(-1)[0].series;
+  assert.equal(detailChart.setOptionCalls.at(-1)[1], undefined);
+  assert.deepEqual(
+    toHostValue(series.map((item) => [item.id, item.data])),
+    [
+      ["a:integer_adm2", [[0, 0.9], [100, 0.8]]],
+      ["a:integer_motion", []],
+    ],
+  );
 });

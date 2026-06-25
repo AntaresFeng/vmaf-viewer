@@ -7,8 +7,8 @@ STATIC_DIR = Path("src/vmaf_viewer/static")
 def test_index_loads_metric_metadata_before_app_js():
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
-    metadata_index = html.index('/static/metric_metadata.js')
-    app_index = html.index('/static/app.js')
+    metadata_index = html.index("/static/metric_metadata.js")
+    app_index = html.index("/static/app.js")
 
     assert "<h2>Detail View</h2>" in html
     assert metadata_index < app_index
