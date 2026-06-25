@@ -795,6 +795,56 @@ function baseChartOptions() {
   };
 }
 
+function detailYAxisOptions(metrics) {
+  const hasNormalized = metrics.some((metric) => {
+    const meta = VmafMetricMetadata.metricMeta(metric);
+    return meta && meta.axisGroup === "normalized";
+  });
+  const rawFamily = VmafMetricMetadata.rawFamilyForMetrics(metrics);
+
+  return [
+    {
+      type: "value",
+      min: 0,
+      max: 1.1,
+      scale: true,
+      show: hasNormalized,
+      name: "ADM / VIF / AIM",
+      nameGap: 8,
+      axisLine: { lineStyle: { color: "#8dbdb6" } },
+      axisLabel: { color: "#24736f" },
+      splitLine: { lineStyle: { color: "#eceee9" } },
+    },
+    {
+      type: "value",
+      scale: true,
+      show: rawFamily !== null,
+      position: "right",
+      name: rawFamily === "psnr" ? "PSNR (dB)" : "Motion",
+      nameGap: 10,
+      axisLine: { lineStyle: { color: "#dfb17e" } },
+      axisLabel: { color: "#b45f1a" },
+      splitLine: { show: false },
+    },
+  ];
+}
+
+function detailChartOptions() {
+  const metrics = activeDetailMetrics();
+  const rawFamily = VmafMetricMetadata.rawFamilyForMetrics(metrics);
+  const options = baseChartOptions();
+
+  return {
+    ...options,
+    tooltip: {
+      ...options.tooltip,
+      valueFormatter: (value) => formatNumber(value, 3),
+    },
+    grid: { ...options.grid, left: 46, right: rawFamily ? 58 : 22 },
+    yAxis: detailYAxisOptions(metrics),
+  };
+}
+
 function emptyChart(chart, text) {
   chart.clear();
   chart.setOption({
@@ -829,19 +879,24 @@ function primaryLineSeries(rows) {
   });
 }
 
-function extraMetricLineSeries(rows) {
+function detailMetricLineSeries(rows) {
   const series = [];
   for (const metric of activeDetailMetrics()) {
+    const meta = VmafMetricMetadata.metricMeta(metric);
+    if (!meta) {
+      continue;
+    }
     const metricSeries = state.extraSeries.get(metric) || {};
     for (const row of rows) {
       const color = colorForRow(row);
       series.push({
-        name: `${row.name} ${metric}`,
+        name: `${row.name} ${metric} · ${meta.axisTag}`,
         type: "line",
+        yAxisIndex: meta.yAxisIndex,
         showSymbol: false,
         smooth: false,
         data: metricSeries[row.id]?.[metric]?.points || [],
-        lineStyle: { width: 1.4, color, type: "dotted" },
+        lineStyle: { width: 1.4, color, type: meta.axisGroup === "normalized" ? "solid" : "dotted" },
         itemStyle: { color },
         emphasis: { focus: "series" },
       });
@@ -850,16 +905,21 @@ function extraMetricLineSeries(rows) {
   return series;
 }
 
-function comparisonLineSeries(rows) {
-  const series = [...primaryLineSeries(rows), ...extraMetricLineSeries(rows)];
+function vmafOverviewSeries(rows) {
+  const series = primaryLineSeries(rows);
   if (series.length) {
     series[0].markLine = { silent: true, symbol: "none", data: referenceLines() };
   }
   return series;
 }
 
+function detailViewSeries(rows) {
+  return detailMetricLineSeries(rows);
+}
+
 function renderLineCharts() {
   const rows = visibleRows();
+  charts.zoom.off("datazoom");
 
   if (!state.comparison || !rows.length) {
     emptyChart(charts.line, "No visible VMAF series.");
@@ -867,49 +927,55 @@ function renderLineCharts() {
     return;
   }
 
-  const series = comparisonLineSeries(rows);
-  if (!series.length) {
-    emptyChart(charts.line, "No active metric series.");
-    emptyChart(charts.zoom, "No active metric series.");
+  const commonRange = state.comparison.common_range || {};
+  const overviewSeries = vmafOverviewSeries(rows);
+
+  if (!overviewSeries.length) {
+    emptyChart(charts.line, "No visible VMAF series.");
+  } else {
+    const overviewOptions = baseChartOptions();
+    charts.line.setOption(
+      {
+        ...overviewOptions,
+        dataZoom: [
+          { type: "inside", filterMode: "none" },
+          { type: "slider", height: 24, bottom: 12, filterMode: "none" },
+        ],
+        xAxis: {
+          ...overviewOptions.xAxis,
+          min: commonRange.start || 0,
+          max: commonRange.end || undefined,
+        },
+        series: overviewSeries,
+      },
+      true,
+    );
+  }
+
+  const detailSeries = detailViewSeries(rows);
+  if (!detailSeries.length) {
+    emptyChart(charts.zoom, "No active detail metrics.");
     return;
   }
-  const commonRange = state.comparison.common_range || {};
 
-  charts.line.setOption(
-    {
-      ...baseChartOptions(),
-      dataZoom: [
-        { type: "inside", filterMode: "none" },
-        { type: "slider", height: 24, bottom: 12, filterMode: "none" },
-      ],
-      xAxis: {
-        ...baseChartOptions().xAxis,
-        min: commonRange.start || 0,
-        max: commonRange.end || undefined,
-      },
-      series,
-    },
-    true,
-  );
-
+  const detailOptions = detailChartOptions();
   charts.zoom.setOption(
     {
-      ...baseChartOptions(),
+      ...detailOptions,
       dataZoom: [
         { type: "inside", filterMode: "none" },
         { type: "slider", height: 24, bottom: 12, filterMode: "none" },
       ],
       xAxis: {
-        ...baseChartOptions().xAxis,
+        ...detailOptions.xAxis,
         min: commonRange.start || 0,
         max: commonRange.end || undefined,
       },
-      series,
+      series: detailSeries,
     },
     true,
   );
 
-  charts.zoom.off("datazoom");
   charts.zoom.on("datazoom", async () => {
     const metrics = activeDetailMetrics();
     if (!state.comparison || !metrics.length) {
