@@ -437,6 +437,129 @@ test("detail range loading waits 400ms and only requests the final zoom range", 
   assert.equal(detailChart.setOptionCalls.length, initialDetailSetOptionCount + 1);
 });
 
+test("primary range loading waits 400ms, fetches the final zoom range, and refreshes only main series", async () => {
+  const createdCharts = [];
+  const pendingTimers = new Map();
+  const fetchBodies = [];
+  let nextTimerId = 0;
+  let currentLineZoom = { start: 10, end: 20 };
+
+  const { renderLineCharts, state } = loadAppContext({
+    clearTimeout(id) {
+      pendingTimers.delete(id);
+    },
+    echarts: {
+      init() {
+        const chart = {
+          onCalls: [],
+          offCalls: [],
+          setOptionCalls: [],
+          clear() {},
+          off(eventName) {
+            this.offCalls.push(eventName);
+          },
+          on(eventName, handler) {
+            this.onCalls.push([eventName, handler]);
+          },
+          resize() {},
+          setOption(...args) {
+            this.setOptionCalls.push(args);
+          },
+          getOption() {
+            return { dataZoom: [currentLineZoom] };
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+    fetch: async (_path, init) => {
+      fetchBodies.push(JSON.parse(init.body));
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            series: {
+              a: {
+                vmaf: {
+                  points: [
+                    [300, 91],
+                    [301, 92],
+                  ],
+                },
+              },
+            },
+          });
+        },
+      };
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextTimerId;
+      pendingTimers.set(id, { callback, delay });
+      return id;
+    },
+  });
+
+  const mainChart = createdCharts[0];
+  state.comparisonRequestId = 1;
+  state.comparison = {
+    common_range: { start: 0, end: 1000 },
+    summary: [{ id: "a", name: "A" }],
+    series: {
+      a: {
+        metric: "vmaf",
+        points: [
+          [0, 95],
+          [1000, 90],
+        ],
+      },
+    },
+  };
+  state.selected = new Set(["a"]);
+  state.metricsByFile = new Map([["a", ["vmaf", "integer_motion"]]]);
+  state.activeDetailMetrics = new Set();
+
+  renderLineCharts();
+
+  assert.deepEqual(mainChart.offCalls, ["datazoom"]);
+  assert.equal(mainChart.setOptionCalls.at(-1)[1], true);
+
+  const dataZoomHandler = mainChart.onCalls.at(-1)[1];
+  await dataZoomHandler();
+  currentLineZoom = { start: 30, end: 40 };
+  await dataZoomHandler();
+
+  assert.equal(fetchBodies.length, 0);
+  assert.equal(pendingTimers.size, 1);
+  const timer = [...pendingTimers.values()][0];
+  assert.equal(timer.delay, 400);
+
+  await timer.callback();
+
+  assert.deepEqual(fetchBodies, [
+    {
+      file_ids: ["a"],
+      metrics: ["vmaf"],
+      start: 300,
+      end: 400,
+      max_points: 5000,
+    },
+  ]);
+  assert.equal(mainChart.setOptionCalls.at(-1)[1], undefined);
+  assert.deepEqual(toHostValue(mainChart.setOptionCalls.at(-1)[0].series[0].data), [
+    [0, 95],
+    [300, 91],
+    [301, 92],
+    [1000, 90],
+  ]);
+  assert.deepEqual(toHostValue(mainChart.setOptionCalls.at(-1)[0].series[0].markLine.data), [
+    { name: "95", yAxis: 95, label: { formatter: "95", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
+    { name: "90", yAxis: 90, label: { formatter: "90", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
+    { name: "80", yAxis: 80, label: { formatter: "80", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
+    { name: "60", yAxis: 60, label: { formatter: "60", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
+  ]);
+});
+
 test("activating a detail metric while zoomed loads that metric for the current range", async () => {
   const pendingTimers = new Map();
   const fetchBodies = [];

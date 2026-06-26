@@ -12,7 +12,7 @@ const COLORS = [
 const DISTRIBUTION_MIN_FLOOR_SCORE = 60;
 const DISTRIBUTION_GRID = { top: "5%", right: "5%", bottom: "5%", left: "5%" };
 const INTEGER_GROUP_RE = /\B(?=(\d{3})+(?!\d))/g;
-const DETAIL_RANGE_LOAD_DEBOUNCE_MS = 400;
+const RANGE_LOAD_DEBOUNCE_MS = 400;
 
 const state = {
   files: [],
@@ -31,6 +31,10 @@ const state = {
   detailRangeLoadTimer: null,
   pendingDetailRangeLoad: null,
   lastDetailRangeLoadKey: "",
+  primarySeriesCache: new Map(),
+  primaryRangeLoadTimer: null,
+  pendingPrimaryRangeLoad: null,
+  lastPrimaryRangeLoadKey: "",
 };
 
 const elements = {
@@ -229,6 +233,8 @@ function resetComparisonState() {
   state.activeDetailMetrics.clear();
   state.metricsByFile.clear();
   state.extraSeries.clear();
+  state.primarySeriesCache.clear();
+  clearPrimaryRangeLoadState();
   state.comparisonRequestId += 1;
   state.zoomSeriesRequestId += 1;
   clearDetailRangeLoadState();
@@ -350,10 +356,12 @@ async function requestComparison() {
   const fileIds = [...state.selected];
   const requestId = ++state.comparisonRequestId;
   clearDetailRangeLoadState();
+  clearPrimaryRangeLoadState();
 
   if (!fileIds.length) {
     state.comparison = null;
     state.extraSeries.clear();
+    state.primarySeriesCache.clear();
     renderMessage({
       status: state.files.length ? VmafMessageState.DEFAULT_STATUS_MESSAGE : "No *_vmaf.json files found.",
     });
@@ -378,6 +386,7 @@ async function requestComparison() {
       return;
     }
     state.comparison = body;
+    initializePrimarySeriesCache();
     state.extraSeries.clear();
     const comparedFileIds = (body.summary || []).map((row) => row.id);
     await loadMetricsForSelected(comparedFileIds);
@@ -461,6 +470,21 @@ function pruneActiveDetailMetrics() {
   state.activeDetailMetrics = new Set(activeDetailMetrics());
 }
 
+function initializePrimarySeriesCache() {
+  state.primarySeriesCache.clear();
+  const comparisonSeries = state.comparison?.series || {};
+  for (const [fileId, series] of Object.entries(comparisonSeries)) {
+    state.primarySeriesCache.set(fileId, {
+      metric: series.metric,
+      points: Array.isArray(series.points) ? [...series.points] : [],
+    });
+  }
+}
+
+function primarySeriesForRow(row) {
+  return state.primarySeriesCache.get(row.id) || state.comparison?.series?.[row.id] || {};
+}
+
 async function requestExtraSeries(metric, range = null) {
   if (!range && state.extraSeries.has(metric)) {
     return false;
@@ -522,12 +546,25 @@ function detailRangeLoadKey(metrics, range) {
   return `${metrics.join(",")}:${range.start}:${range.end}`;
 }
 
-function currentDetailZoomRange() {
+function clearPrimaryRangeLoadState() {
+  cancelPendingPrimaryRangeLoad();
+  state.lastPrimaryRangeLoadKey = "";
+}
+
+function cancelPendingPrimaryRangeLoad() {
+  if (state.primaryRangeLoadTimer !== null) {
+    clearTimeout(state.primaryRangeLoadTimer);
+  }
+  state.primaryRangeLoadTimer = null;
+  state.pendingPrimaryRangeLoad = null;
+}
+
+function chartZoomRange(chart) {
   if (!state.comparison) {
     return null;
   }
 
-  const option = charts.zoom.getOption();
+  const option = chart.getOption();
   const zoom = (option.dataZoom || []).find((item) => Number.isFinite(item.start) && Number.isFinite(item.end));
   if (!zoom) {
     return null;
@@ -545,6 +582,55 @@ function currentDetailZoomRange() {
   }
 
   return { start, end };
+}
+
+function currentDetailZoomRange() {
+  return chartZoomRange(charts.zoom);
+}
+
+function currentPrimaryZoomRange() {
+  return chartZoomRange(charts.line);
+}
+
+function mergePointSeries(existingPoints = [], incomingPoints = []) {
+  const pointsByFrame = new Map();
+  for (const point of existingPoints || []) {
+    if (Array.isArray(point) && point.length >= 2) {
+      pointsByFrame.set(Number(point[0]), point);
+    }
+  }
+  for (const point of incomingPoints || []) {
+    if (Array.isArray(point) && point.length >= 2) {
+      pointsByFrame.set(Number(point[0]), point);
+    }
+  }
+  return [...pointsByFrame.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map((entry) => entry[1]);
+}
+
+function mergePrimarySeries(incomingSeries = {}) {
+  for (const [fileId, incomingMetrics] of Object.entries(incomingSeries || {})) {
+    const current = state.primarySeriesCache.get(fileId) || state.comparison?.series?.[fileId];
+    const metric = current?.metric;
+    if (!metric || !incomingMetrics?.[metric]) {
+      continue;
+    }
+    state.primarySeriesCache.set(fileId, {
+      metric,
+      points: mergePointSeries(current.points || [], incomingMetrics[metric].points || []),
+    });
+  }
+}
+
+function primaryRangeLoadKey(rows, range) {
+  const rowKey = rows
+    .map((row) => {
+      const metric = primarySeriesForRow(row).metric || "";
+      return `${row.id}:${metric}`;
+    })
+    .join("|");
+  return `${rowKey}:${range.start}:${range.end}`;
 }
 
 function scheduleCurrentDetailRangeLoad(metrics) {
@@ -572,7 +658,7 @@ function scheduleDetailRangeLoad(metrics, range) {
     range: { ...range },
     comparisonRequestId: state.comparisonRequestId,
   };
-  state.detailRangeLoadTimer = setTimeout(loadPendingDetailRange, DETAIL_RANGE_LOAD_DEBOUNCE_MS);
+  state.detailRangeLoadTimer = setTimeout(loadPendingDetailRange, RANGE_LOAD_DEBOUNCE_MS);
 }
 
 async function loadPendingDetailRange() {
@@ -620,8 +706,7 @@ function mergeMetricSeries(existingSeries = {}, incomingSeries = {}, metric) {
       ...existingMetrics,
       [metric]: {
         ...existingMetric,
-        ...incomingMetric,
-        points: mergeSeriesPoints(existingMetric.points, incomingMetric.points),
+        points: mergePointSeries(existingMetric.points || [], incomingMetric.points || []),
       },
     };
   }
@@ -1027,9 +1112,10 @@ function emptyChart(chart, text) {
 
 function primaryLineSeries(rows) {
   return rows.map((row) => {
-    const series = state.comparison.series[row.id] || {};
+    const series = primarySeriesForRow(row);
     const color = colorForRow(row);
     return {
+      id: `primary:${row.id}`,
       name: row.name,
       type: "line",
       showSymbol: false,
@@ -1092,8 +1178,103 @@ function detailSeriesForMerge(detailSeries) {
   return [...detailSeries, ...removedSeries];
 }
 
+function primaryMetricGroups(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const metric = primarySeriesForRow(row).metric;
+    if (!metric) {
+      continue;
+    }
+    if (!groups.has(metric)) {
+      groups.set(metric, []);
+    }
+    groups.get(metric).push(row.id);
+  }
+  return groups;
+}
+
+function schedulePrimaryRangeLoad(rows, range) {
+  const key = primaryRangeLoadKey(rows, range);
+  if (key === state.lastPrimaryRangeLoadKey) {
+    return;
+  }
+
+  if (state.primaryRangeLoadTimer !== null) {
+    clearTimeout(state.primaryRangeLoadTimer);
+  }
+
+  state.pendingPrimaryRangeLoad = {
+    key,
+    rows: rows.map((row) => ({ id: row.id, name: row.name })),
+    range: { ...range },
+    comparisonRequestId: state.comparisonRequestId,
+  };
+  state.primaryRangeLoadTimer = setTimeout(loadPendingPrimaryRange, RANGE_LOAD_DEBOUNCE_MS);
+}
+
+async function requestPrimarySeriesForRange(rows, range) {
+  const groups = primaryMetricGroups(rows);
+  if (!state.comparison || !groups.size) {
+    return false;
+  }
+
+  for (const [metric, fileIds] of groups.entries()) {
+    const body = await api("/api/series", {
+      method: "POST",
+      body: {
+        file_ids: fileIds,
+        metrics: [metric],
+        start: range.start,
+        end: range.end,
+        max_points: 5000,
+      },
+    });
+    mergePrimarySeries(body.series || {});
+  }
+  return true;
+}
+
+async function loadPendingPrimaryRange() {
+  const pending = state.pendingPrimaryRangeLoad;
+  state.primaryRangeLoadTimer = null;
+  state.pendingPrimaryRangeLoad = null;
+
+  if (!pending || pending.key === state.lastPrimaryRangeLoadKey) {
+    return;
+  }
+  if (pending.comparisonRequestId !== state.comparisonRequestId) {
+    return;
+  }
+
+  try {
+    const applied = await requestPrimarySeriesForRange(pending.rows, pending.range);
+    if (!applied || pending.comparisonRequestId !== state.comparisonRequestId) {
+      return;
+    }
+    state.lastPrimaryRangeLoadKey = pending.key;
+    refreshPrimaryChartSeries();
+  } catch (error) {
+    if (pending.comparisonRequestId === state.comparisonRequestId) {
+      renderMessage({ error: error.message || "Unable to load zoomed VMAF series." });
+    }
+  }
+}
+
+function refreshPrimaryChartSeries() {
+  if (!state.comparison) {
+    return;
+  }
+  const rows = visibleRows();
+  if (!rows.length) {
+    cancelPendingPrimaryRangeLoad();
+    return;
+  }
+  charts.line.setOption({ series: vmafOverviewSeries(rows) });
+}
+
 function renderLineCharts() {
   const rows = visibleRows();
+  charts.line.off("datazoom");
   charts.zoom.off("datazoom");
 
   if (!state.comparison || !rows.length) {
@@ -1127,6 +1308,22 @@ function renderLineCharts() {
       true,
     );
   }
+
+  charts.line.on("datazoom", async () => {
+    const currentRows = visibleRows();
+    if (!state.comparison || !currentRows.length) {
+      cancelPendingPrimaryRangeLoad();
+      return;
+    }
+
+    const range = currentPrimaryZoomRange();
+    if (!range) {
+      cancelPendingPrimaryRangeLoad();
+      return;
+    }
+
+    schedulePrimaryRangeLoad(currentRows, range);
+  });
 
   const detailSeries = detailViewSeries(rows);
   if (!detailSeries.length) {
