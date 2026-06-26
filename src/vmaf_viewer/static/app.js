@@ -714,18 +714,6 @@ function mergeMetricSeries(existingSeries = {}, incomingSeries = {}, metric) {
   return mergedSeries;
 }
 
-function mergeSeriesPoints(existingPoints = [], incomingPoints = []) {
-  const pointsByFrame = new Map();
-
-  for (const point of [...(existingPoints || []), ...(incomingPoints || [])]) {
-    if (!Array.isArray(point) || !point.length) {
-      continue;
-    }
-    pointsByFrame.set(point[0], point);
-  }
-
-  return [...pointsByFrame.values()].sort((left, right) => Number(left[0]) - Number(right[0]));
-}
 
 function thresholdEntry(stats, threshold) {
   const entries = stats && stats.thresholds ? stats.thresholds : {};
