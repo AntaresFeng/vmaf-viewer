@@ -61,12 +61,13 @@ primarySeriesCache: Map<fileId, { metric: string, points: Array<[number, number]
 primaryRangeLoadTimer: number | null
 pendingPrimaryRangeLoad: object | null
 lastPrimaryRangeLoadKey: string
-primarySeriesRequestId: number
 ```
 
 `primarySeriesCache` is initialized from `state.comparison.series` after a successful `/api/compare` response. Range-loaded points are merged into this cache. The original `state.comparison.series` remains unchanged.
 
-The cache key is `fileId` because each displayed video row has exactly one primary score metric in the current comparison. The metric name is stored with the points so the cache can be reset or ignored safely if a later comparison chooses a different primary metric.
+The cache key is `fileId` because each displayed video row has exactly one primary score metric in the current comparison. The value shape intentionally matches `state.comparison.series[fileId]`: `{ metric, points }`. This differs from `state.extraSeries`, whose detail-metric cache is nested as `{ fileId: { metric: { points } } }`.
+
+Stale response protection should use the existing `comparisonRequestId` captured in each pending range load. A separate primary-series request id is not needed because a response from an old comparison is already rejected by `comparisonRequestId`, and same-comparison range responses merge by frame number into the same source-of-truth metric data.
 
 ## Metric Grouping
 
@@ -85,7 +86,7 @@ For the common case where all rows use `vmaf`, this produces one request. For mi
 
 ## Zoom Trigger
 
-The main chart listens to its own `datazoom` event. This handler is independent from the Local Zoom detail chart handler.
+The main chart listens to its own `datazoom` event. This handler is independent from the Local Zoom detail chart handler. Before registering it, `renderLineCharts()` must call `charts.line.off("datazoom")`, mirroring the existing `charts.zoom.off("datazoom")`, so repeated renders do not stack multiple main-chart handlers.
 
 On each main-chart `datazoom` event:
 
@@ -137,17 +138,33 @@ This mirrors the detail-series behavior: a range fetch enriches the current cach
 
 ## Chart Update
 
-The main chart needs stable series ids, for example `primary:${row.id}`. `primaryLineSeries()` should read from `primarySeriesCache` when available and fall back to `state.comparison.series`.
+The main chart needs stable series ids. `primaryLineSeries()` must set:
+
+```js
+id: `primary:${row.id}`
+```
+
+Without explicit ids, ECharts merge mode can match series by array index. Hiding or re-showing files changes the visible series order, so id-based matching is required for safe range refreshes.
+
+`primaryLineSeries()` should read from `primarySeriesCache` when available and fall back to `state.comparison.series`.
+
+The initial render path after a new comparison, empty-state recovery, or other broad reset should continue to use the existing full replacement behavior:
+
+```js
+charts.line.setOption(fullMainChartOptions, true);
+```
+
+That keeps stale axes, dataZoom components, and old series from leaking across comparisons.
 
 After a range load, do not call the full chart replacement path that uses `setOption(..., true)`, because that would reset `dataZoom` to the full video range.
 
-Instead, update only the main chart's `series` in merge mode:
+Instead, add a dedicated range-refresh helper, conceptually `refreshPrimaryChartSeries()`, that updates only the main chart's `series` in merge mode:
 
 ```js
 charts.line.setOption({ series: vmafOverviewSeries(visibleRows()) });
 ```
 
-The normal full render path can still rebuild the chart after a new comparison, empty state, or other broad UI reset. The range-load refresh path should preserve the current `dataZoom` runtime state.
+The range-refresh helper must not pass `true` as the second argument. It should preserve the current `dataZoom` runtime state while still keeping the first visible primary series' reference `markLine` from `vmafOverviewSeries()`.
 
 ## Isolation From Local Zoom
 
@@ -155,7 +172,7 @@ Main-chart range loading and Local Zoom detail range loading should have separat
 
 - separate pending timers;
 - separate last-loaded keys;
-- separate request ids or stale-response guards;
+- separate stale-response guards via captured `comparisonRequestId`;
 - separate caches.
 
 They should both be cleared when the comparison changes. A main-chart range request must not invalidate an in-flight detail-chart range request, and a detail-chart range request must not invalidate a main-chart range request.
@@ -184,6 +201,8 @@ Add frontend harness tests for:
 - mixed primary metrics are grouped into separate `/api/series` requests;
 - returned range points merge into the main-chart cache instead of replacing the full-video points;
 - range refresh updates the main chart series in merge mode and does not call the full replacement path that resets `dataZoom`;
+- range refresh keeps the first visible primary series' reference `markLine`;
+- hiding a file and then showing it again reuses cached dense points and does not re-request the same loaded range;
 - Local Zoom detail range loading still uses its own state and is not invalidated by a main-chart range request.
 
 Run the existing frontend and backend checks after implementation:
