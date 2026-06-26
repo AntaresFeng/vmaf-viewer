@@ -437,6 +437,78 @@ test("detail range loading waits 400ms and only requests the final zoom range", 
   assert.equal(detailChart.setOptionCalls.length, initialDetailSetOptionCount + 1);
 });
 
+test("primary and detail range loading use independent pending timers", async () => {
+  const createdCharts = [];
+  const pendingTimers = new Map();
+  let nextTimerId = 0;
+
+  const { renderLineCharts, state } = loadAppContext({
+    clearTimeout(id) {
+      pendingTimers.delete(id);
+    },
+    echarts: {
+      init() {
+        const chart = {
+          onCalls: [],
+          clear() {},
+          off() {},
+          on(eventName, handler) {
+            this.onCalls.push([eventName, handler]);
+          },
+          resize() {},
+          setOption() {},
+          getOption() {
+            return { dataZoom: [{ start: 10, end: 20 }] };
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+    fetch: async (_path, init) => {
+      const body = JSON.parse(init.body);
+      const metric = body.metrics[0];
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            series: Object.fromEntries(
+              body.file_ids.map((fileId) => [fileId, { [metric]: { points: [[100, 1]] } }]),
+            ),
+          });
+        },
+      };
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextTimerId;
+      pendingTimers.set(id, { callback, delay });
+      return id;
+    },
+  });
+
+  const [mainChart, detailChart] = createdCharts;
+  state.comparisonRequestId = 1;
+  state.comparison = {
+    common_range: { start: 0, end: 1000 },
+    summary: [{ id: "a", name: "A" }],
+    series: { a: { metric: "vmaf", points: [[0, 95], [1000, 90]] } },
+  };
+  state.selected = new Set(["a"]);
+  state.metricsByFile = new Map([["a", ["vmaf", "integer_motion"]]]);
+  state.activeDetailMetrics = new Set(["integer_motion"]);
+  state.extraSeries = new Map([
+    ["integer_motion", { a: { integer_motion: { points: [[0, 1], [1000, 2]] } } }],
+  ]);
+
+  renderLineCharts();
+  await mainChart.onCalls.at(-1)[1]();
+  await detailChart.onCalls.at(-1)[1]();
+
+  assert.equal(pendingTimers.size, 2);
+  assert.notEqual(state.pendingPrimaryRangeLoad, null);
+  assert.notEqual(state.pendingDetailRangeLoad, null);
+});
+
 test("primary range loading waits 400ms, fetches the final zoom range, and refreshes only main series", async () => {
   const createdCharts = [];
   const pendingTimers = new Map();
@@ -707,6 +779,91 @@ test("primary range loading groups visible files by their selected primary metri
   assert.deepEqual(toHostValue(mainChart.setOptionCalls.at(-1)[0].series.map((series) => series.data)), [
     [[0, 95], [250, 91], [1000, 90]],
     [[0, 90], [250, 88], [1000, 85]],
+  ]);
+});
+
+test("primary range cache survives hiding and re-showing a file in the same comparison", async () => {
+  const createdCharts = [];
+  const pendingTimers = new Map();
+  const fetchBodies = [];
+  let nextTimerId = 0;
+
+  const { renderLineCharts, state } = loadAppContext({
+    clearTimeout(id) {
+      pendingTimers.delete(id);
+    },
+    echarts: {
+      init() {
+        const chart = {
+          onCalls: [],
+          setOptionCalls: [],
+          clear() {},
+          off() {},
+          on(eventName, handler) {
+            this.onCalls.push([eventName, handler]);
+          },
+          resize() {},
+          setOption(...args) {
+            this.setOptionCalls.push(args);
+          },
+          getOption() {
+            return { dataZoom: [{ start: 30, end: 40 }] };
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+    fetch: async (_path, init) => {
+      fetchBodies.push(JSON.parse(init.body));
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            series: {
+              a: { vmaf: { points: [[300, 91]] } },
+              b: { vmaf: { points: [[300, 87]] } },
+            },
+          });
+        },
+      };
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextTimerId;
+      pendingTimers.set(id, { callback, delay });
+      return id;
+    },
+  });
+
+  const mainChart = createdCharts[0];
+  state.comparisonRequestId = 1;
+  state.comparison = {
+    common_range: { start: 0, end: 1000 },
+    summary: [
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
+    ],
+    series: {
+      a: { metric: "vmaf", points: [[0, 95], [1000, 90]] },
+      b: { metric: "vmaf", points: [[0, 90], [1000, 85]] },
+    },
+  };
+  state.selected = new Set(["a", "b"]);
+
+  renderLineCharts();
+  await mainChart.onCalls.at(-1)[1]();
+  await [...pendingTimers.values()][0].callback();
+
+  state.hiddenFiles = new Set(["a"]);
+  renderLineCharts();
+  state.hiddenFiles = new Set();
+  renderLineCharts();
+  await mainChart.onCalls.at(-1)[1]();
+
+  assert.equal(fetchBodies.length, 1);
+  assert.deepEqual(toHostValue(mainChart.setOptionCalls.at(-1)[0].series.map((series) => series.data)), [
+    [[0, 95], [300, 91], [1000, 90]],
+    [[0, 90], [300, 87], [1000, 85]],
   ]);
 });
 
