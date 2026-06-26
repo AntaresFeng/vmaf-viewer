@@ -560,6 +560,156 @@ test("primary range loading waits 400ms, fetches the final zoom range, and refre
   ]);
 });
 
+test("primary range loading skips zoom windows wider than 5000 frames", async () => {
+  const createdCharts = [];
+  const pendingTimers = new Map();
+  const fetchBodies = [];
+  let nextTimerId = 0;
+
+  const { renderLineCharts, state } = loadAppContext({
+    clearTimeout(id) {
+      pendingTimers.delete(id);
+    },
+    echarts: {
+      init() {
+        const chart = {
+          onCalls: [],
+          clear() {},
+          off() {},
+          on(eventName, handler) {
+            this.onCalls.push([eventName, handler]);
+          },
+          resize() {},
+          setOption() {},
+          getOption() {
+            return { dataZoom: [{ start: 0, end: 100 }] };
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+    fetch: async (_path, init) => {
+      fetchBodies.push(JSON.parse(init.body));
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({ series: {} });
+        },
+      };
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextTimerId;
+      pendingTimers.set(id, { callback, delay });
+      return id;
+    },
+  });
+
+  const mainChart = createdCharts[0];
+  state.comparison = {
+    common_range: { start: 0, end: 10000 },
+    summary: [{ id: "a", name: "A" }],
+    series: { a: { metric: "vmaf", points: [[0, 95], [10000, 90]] } },
+  };
+  state.selected = new Set(["a"]);
+
+  renderLineCharts();
+  await mainChart.onCalls.at(-1)[1]();
+
+  assert.equal(pendingTimers.size, 0);
+  assert.deepEqual(fetchBodies, []);
+});
+
+test("primary range loading groups visible files by their selected primary metric", async () => {
+  const createdCharts = [];
+  const pendingTimers = new Map();
+  const fetchBodies = [];
+  let nextTimerId = 0;
+
+  const { renderLineCharts, state } = loadAppContext({
+    clearTimeout(id) {
+      pendingTimers.delete(id);
+    },
+    echarts: {
+      init() {
+        const chart = {
+          onCalls: [],
+          setOptionCalls: [],
+          clear() {},
+          off() {},
+          on(eventName, handler) {
+            this.onCalls.push([eventName, handler]);
+          },
+          resize() {},
+          setOption(...args) {
+            this.setOptionCalls.push(args);
+          },
+          getOption() {
+            return { dataZoom: [{ start: 25, end: 35 }] };
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+    fetch: async (_path, init) => {
+      const requestBody = JSON.parse(init.body);
+      fetchBodies.push(requestBody);
+      return {
+        ok: true,
+        async text() {
+          const metric = requestBody.metrics[0];
+          return JSON.stringify({
+            series: Object.fromEntries(
+              requestBody.file_ids.map((fileId) => [
+                fileId,
+                {
+                  [metric]: {
+                    points: [[250, fileId === "a" ? 91 : 88]],
+                  },
+                },
+              ]),
+            ),
+          });
+        },
+      };
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextTimerId;
+      pendingTimers.set(id, { callback, delay });
+      return id;
+    },
+  });
+
+  const mainChart = createdCharts[0];
+  state.comparisonRequestId = 7;
+  state.comparison = {
+    common_range: { start: 0, end: 1000 },
+    summary: [
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
+    ],
+    series: {
+      a: { metric: "vmaf", points: [[0, 95], [1000, 90]] },
+      b: { metric: "vmaf_hd", points: [[0, 90], [1000, 85]] },
+    },
+  };
+  state.selected = new Set(["a", "b"]);
+
+  renderLineCharts();
+  await mainChart.onCalls.at(-1)[1]();
+  await [...pendingTimers.values()][0].callback();
+
+  assert.deepEqual(fetchBodies, [
+    { file_ids: ["a"], metrics: ["vmaf"], start: 250, end: 350, max_points: 5000 },
+    { file_ids: ["b"], metrics: ["vmaf_hd"], start: 250, end: 350, max_points: 5000 },
+  ]);
+  assert.deepEqual(toHostValue(mainChart.setOptionCalls.at(-1)[0].series.map((series) => series.data)), [
+    [[0, 95], [250, 91], [1000, 90]],
+    [[0, 90], [250, 88], [1000, 85]],
+  ]);
+});
+
 test("activating a detail metric while zoomed loads that metric for the current range", async () => {
   const pendingTimers = new Map();
   const fetchBodies = [];
