@@ -618,6 +618,7 @@ test("primary range loading waits 400ms, fetches the final zoom range, and refre
     },
   ]);
   assert.equal(mainChart.setOptionCalls.at(-1)[1], undefined);
+  assert.equal(mainChart.setOptionCalls.at(-1)[0].series[0].sampling, undefined);
   assert.deepEqual(toHostValue(mainChart.setOptionCalls.at(-1)[0].series[0].data), [
     [0, 95],
     [300, 91],

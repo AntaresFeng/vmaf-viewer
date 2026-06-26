@@ -1108,7 +1108,6 @@ function primaryLineSeries(rows) {
       type: "line",
       showSymbol: false,
       smooth: false,
-      sampling: "lttb",
       data: series.points || [],
       lineStyle: { width: 1.6, color },
       itemStyle: { color },
