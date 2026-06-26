@@ -1140,7 +1140,7 @@ function renderLineCharts() {
     ...detailOptions,
     dataZoom: [
       { type: "inside", filterMode: "none" },
-      { type: "slider", height: 24, bottom: 12, filterMode: "none" },
+      { type: "slider", height: 24, bottom: 12, filterMode: "none", showDataShadow: false },
     ],
     xAxis: {
       ...detailOptions.xAxis,

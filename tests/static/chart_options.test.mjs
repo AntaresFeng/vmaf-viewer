@@ -202,6 +202,7 @@ test("detail chart rerenders in merge mode so dataZoom slider state is preserved
   assert.equal(overviewChart.setOptionCalls.at(-1)[1], true);
   assert.equal(detailChart.setOptionCalls.at(-1)[1], undefined);
   assert.deepEqual(detailChart.onCalls.at(-1)[0], "datazoom");
+  assert.equal(detailChart.setOptionCalls.at(-1)[0].dataZoom[1].showDataShadow, false);
 });
 
 test("range detail series requests merge into existing full-range cache", async () => {
