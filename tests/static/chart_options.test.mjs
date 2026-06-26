@@ -301,3 +301,46 @@ test("detail chart clears removed metric series while using merge mode", () => {
     ],
   );
 });
+
+test("detail chart hides stale empty-state title when metrics become active", () => {
+  const createdCharts = [];
+  const { renderLineCharts, state } = loadAppContext({
+    echarts: {
+      init() {
+        const chart = {
+          setOptionCalls: [],
+          clear() {},
+          off() {},
+          on() {},
+          resize() {},
+          setOption(...args) {
+            this.setOptionCalls.push(args);
+          },
+          getOption() {
+            return {};
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+  });
+  const detailChart = createdCharts[1];
+  state.comparison = {
+    common_range: { start: 0, end: 100 },
+    summary: [{ id: "a", name: "A" }],
+    series: { a: { points: [[0, 95], [100, 90]] } },
+  };
+  state.metricsByFile = new Map([["a", ["vmaf", "integer_motion"]]]);
+  state.extraSeries = new Map([
+    ["integer_motion", { a: { integer_motion: { points: [[0, 1], [100, 2]] } } }],
+  ]);
+
+  state.activeDetailMetrics = new Set();
+  renderLineCharts();
+  state.activeDetailMetrics = new Set(["integer_motion"]);
+  renderLineCharts();
+
+  assert.equal(detailChart.setOptionCalls.at(-1)[1], undefined);
+  assert.deepEqual(toHostValue(detailChart.setOptionCalls.at(-1)[0].title), { show: false, text: "" });
+});

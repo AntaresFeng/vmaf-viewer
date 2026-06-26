@@ -888,6 +888,7 @@ function detailChartOptions() {
 
   return {
     ...options,
+    title: { show: false, text: "" },
     tooltip: {
       ...options.tooltip,
       valueFormatter: (value) => formatNumber(value, 3),
