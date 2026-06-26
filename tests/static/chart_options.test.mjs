@@ -344,3 +344,183 @@ test("detail chart hides stale empty-state title when metrics become active", ()
   assert.equal(detailChart.setOptionCalls.at(-1)[1], undefined);
   assert.deepEqual(toHostValue(detailChart.setOptionCalls.at(-1)[0].title), { show: false, text: "" });
 });
+
+test("detail range loading waits 400ms and only requests the final zoom range", async () => {
+  const createdCharts = [];
+  const pendingTimers = new Map();
+  const fetchBodies = [];
+  let nextTimerId = 0;
+  let currentZoom = { start: 10, end: 20 };
+  let renderChartsCount = 0;
+  const { renderLineCharts, state } = loadAppContext({
+    clearTimeout(id) {
+      pendingTimers.delete(id);
+    },
+    echarts: {
+      init() {
+        const chart = {
+          onCalls: [],
+          setOptionCalls: [],
+          clear() {},
+          off() {},
+          on(eventName, handler) {
+            this.onCalls.push([eventName, handler]);
+          },
+          resize() {},
+          setOption(...args) {
+            this.setOptionCalls.push(args);
+          },
+          getOption() {
+            return { dataZoom: [currentZoom] };
+          },
+        };
+        createdCharts.push(chart);
+        return chart;
+      },
+    },
+    fetch: async (_path, init) => {
+      fetchBodies.push(JSON.parse(init.body));
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({ series: {} });
+        },
+      };
+    },
+    renderCharts() {
+      renderChartsCount += 1;
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextTimerId;
+      pendingTimers.set(id, { callback, delay });
+      return id;
+    },
+  });
+  const detailChart = createdCharts[1];
+  state.comparison = {
+    common_range: { start: 0, end: 1000 },
+    summary: [{ id: "a", name: "A" }],
+    series: { a: { points: [[0, 95], [1000, 90]] } },
+  };
+  state.selected = new Set(["a"]);
+  state.metricsByFile = new Map([["a", ["vmaf", "integer_motion"]]]);
+  state.activeDetailMetrics = new Set(["integer_motion"]);
+  state.extraSeries = new Map([
+    ["integer_motion", { a: { integer_motion: { points: [[0, 1], [1000, 2]] } } }],
+  ]);
+  renderLineCharts();
+
+  const dataZoomHandler = detailChart.onCalls.at(-1)[1];
+  const initialDetailSetOptionCount = detailChart.setOptionCalls.length;
+  await dataZoomHandler();
+  currentZoom = { start: 30, end: 40 };
+  await dataZoomHandler();
+
+  assert.equal(fetchBodies.length, 0);
+  assert.equal(pendingTimers.size, 1);
+  const timer = [...pendingTimers.values()][0];
+  assert.equal(timer.delay, 400);
+
+  await timer.callback();
+
+  assert.deepEqual(fetchBodies, [
+    {
+      file_ids: ["a"],
+      metrics: ["integer_motion"],
+      start: 300,
+      end: 400,
+      max_points: 5000,
+    },
+  ]);
+  assert.equal(renderChartsCount, 0);
+  assert.equal(detailChart.setOptionCalls.length, initialDetailSetOptionCount + 1);
+});
+
+test("activating a detail metric while zoomed loads that metric for the current range", async () => {
+  const pendingTimers = new Map();
+  const fetchBodies = [];
+  let nextTimerId = 0;
+  let renderChartsCount = 0;
+  const { elements, renderControls, state } = loadAppContext({
+    clearTimeout(id) {
+      pendingTimers.delete(id);
+    },
+    echarts: {
+      init() {
+        return {
+          clear() {},
+          off() {},
+          on() {},
+          resize() {},
+          setOption() {},
+          getOption() {
+            return { dataZoom: [{ start: 30, end: 40 }] };
+          },
+        };
+      },
+    },
+    fetch: async (_path, init) => {
+      fetchBodies.push(JSON.parse(init.body));
+      return {
+        ok: true,
+        async text() {
+          const body = JSON.parse(init.body);
+          return JSON.stringify({
+            series: {
+              a: Object.fromEntries(body.metrics.map((metric) => [metric, { points: [] }])),
+            },
+          });
+        },
+      };
+    },
+    renderCharts() {
+      renderChartsCount += 1;
+    },
+    setTimeout(callback, delay) {
+      const id = ++nextTimerId;
+      pendingTimers.set(id, { callback, delay });
+      return id;
+    },
+  });
+  state.comparisonRequestId = 1;
+  state.comparison = {
+    common_range: { start: 0, end: 1000 },
+    summary: [{ id: "a", name: "A" }],
+    series: { a: { points: [[0, 95], [1000, 90]] } },
+  };
+  state.selected = new Set(["a"]);
+  state.metricsByFile = new Map([["a", ["vmaf", "integer_motion", "integer_adm2"]]]);
+  state.activeDetailMetrics = new Set(["integer_motion"]);
+  state.extraSeries = new Map([
+    ["integer_motion", { a: { integer_motion: { points: [[0, 1], [1000, 2]] } } }],
+  ]);
+  renderControls();
+
+  const admToggle = elements.metricToggles.children.find((chip) => chip.title.startsWith("integer_adm2"));
+  assert.ok(admToggle);
+  await admToggle.listeners.click();
+
+  assert.deepEqual(fetchBodies, [
+    {
+      file_ids: ["a"],
+      metrics: ["integer_adm2"],
+      start: 0,
+      end: 1000,
+      max_points: 2000,
+    },
+  ]);
+  assert.equal(renderChartsCount, 1);
+  assert.equal(pendingTimers.size, 1);
+  const timer = [...pendingTimers.values()][0];
+  assert.equal(timer.delay, 400);
+
+  await timer.callback();
+
+  assert.deepEqual(fetchBodies.at(-1), {
+    file_ids: ["a"],
+    metrics: ["integer_adm2"],
+    start: 300,
+    end: 400,
+    max_points: 5000,
+  });
+});

@@ -12,6 +12,7 @@ const COLORS = [
 const DISTRIBUTION_MIN_FLOOR_SCORE = 60;
 const DISTRIBUTION_GRID = { top: "5%", right: "5%", bottom: "5%", left: "5%" };
 const INTEGER_GROUP_RE = /\B(?=(\d{3})+(?!\d))/g;
+const DETAIL_RANGE_LOAD_DEBOUNCE_MS = 400;
 
 const state = {
   files: [],
@@ -27,6 +28,9 @@ const state = {
   comparisonRequestId: 0,
   zoomSeriesRequestId: 0,
   renderedDetailSeriesIds: new Set(),
+  detailRangeLoadTimer: null,
+  pendingDetailRangeLoad: null,
+  lastDetailRangeLoadKey: "",
 };
 
 const elements = {
@@ -227,6 +231,7 @@ function resetComparisonState() {
   state.extraSeries.clear();
   state.comparisonRequestId += 1;
   state.zoomSeriesRequestId += 1;
+  clearDetailRangeLoadState();
 }
 
 function applyFilesResponse(body, { preserveSelection = true, resetFilter = false } = {}) {
@@ -344,6 +349,7 @@ async function requestComparison() {
   const thresholds = parseThresholds();
   const fileIds = [...state.selected];
   const requestId = ++state.comparisonRequestId;
+  clearDetailRangeLoadState();
 
   if (!fileIds.length) {
     state.comparison = null;
@@ -457,16 +463,16 @@ function pruneActiveDetailMetrics() {
 
 async function requestExtraSeries(metric, range = null) {
   if (!range && state.extraSeries.has(metric)) {
-    return;
+    return false;
   }
-  await requestExtraSeriesForMetrics([metric], range);
+  return requestExtraSeriesForMetrics([metric], range);
 }
 
 async function requestExtraSeriesForMetrics(metrics, range = null, expectedComparisonRequestId = state.comparisonRequestId) {
   const fileIds = comparedFileIds();
   const requestedMetrics = metrics.filter((metric) => range || !state.extraSeries.has(metric));
   if (!state.comparison || !requestedMetrics.length || !fileIds.length) {
-    return;
+    return false;
   }
 
   const requestId = ++state.zoomSeriesRequestId;
@@ -483,19 +489,120 @@ async function requestExtraSeriesForMetrics(metrics, range = null, expectedCompa
   });
 
   if (expectedComparisonRequestId !== state.comparisonRequestId) {
-    return;
+    return false;
   }
   if (range && requestId !== state.zoomSeriesRequestId) {
-    return;
+    return false;
   }
   for (const metric of requestedMetrics) {
     const series = body.series || {};
     state.extraSeries.set(metric, range ? mergeMetricSeries(state.extraSeries.get(metric), series, metric) : series);
   }
+  return true;
 }
 
 async function requestExtraSeriesForRange(metrics, range) {
-  await requestExtraSeriesForMetrics(metrics, range);
+  return requestExtraSeriesForMetrics(metrics, range);
+}
+
+function clearDetailRangeLoadState() {
+  cancelPendingDetailRangeLoad();
+  state.lastDetailRangeLoadKey = "";
+}
+
+function cancelPendingDetailRangeLoad() {
+  if (state.detailRangeLoadTimer !== null) {
+    clearTimeout(state.detailRangeLoadTimer);
+  }
+  state.detailRangeLoadTimer = null;
+  state.pendingDetailRangeLoad = null;
+}
+
+function detailRangeLoadKey(metrics, range) {
+  return `${metrics.join(",")}:${range.start}:${range.end}`;
+}
+
+function currentDetailZoomRange() {
+  if (!state.comparison) {
+    return null;
+  }
+
+  const option = charts.zoom.getOption();
+  const zoom = (option.dataZoom || []).find((item) => Number.isFinite(item.start) && Number.isFinite(item.end));
+  if (!zoom) {
+    return null;
+  }
+
+  const commonRange = state.comparison.common_range || {};
+  const rangeStart = Number(commonRange.start || 0);
+  const rangeEnd = Number(commonRange.end || 0);
+  const span = Math.max(0, rangeEnd - rangeStart);
+  const start = Math.max(rangeStart, Math.floor(rangeStart + (zoom.start / 100) * span));
+  const end = Math.min(rangeEnd, Math.ceil(rangeStart + (zoom.end / 100) * span));
+
+  if (end - start > 5000) {
+    return null;
+  }
+
+  return { start, end };
+}
+
+function scheduleCurrentDetailRangeLoad(metrics) {
+  const range = currentDetailZoomRange();
+  if (!range) {
+    cancelPendingDetailRangeLoad();
+    return;
+  }
+  scheduleDetailRangeLoad(metrics, range);
+}
+
+function scheduleDetailRangeLoad(metrics, range) {
+  const key = detailRangeLoadKey(metrics, range);
+  if (key === state.lastDetailRangeLoadKey) {
+    return;
+  }
+
+  if (state.detailRangeLoadTimer !== null) {
+    clearTimeout(state.detailRangeLoadTimer);
+  }
+
+  state.pendingDetailRangeLoad = {
+    key,
+    metrics: [...metrics],
+    range: { ...range },
+    comparisonRequestId: state.comparisonRequestId,
+  };
+  state.detailRangeLoadTimer = setTimeout(loadPendingDetailRange, DETAIL_RANGE_LOAD_DEBOUNCE_MS);
+}
+
+async function loadPendingDetailRange() {
+  const pending = state.pendingDetailRangeLoad;
+  state.detailRangeLoadTimer = null;
+  state.pendingDetailRangeLoad = null;
+
+  if (!pending || pending.key === state.lastDetailRangeLoadKey) {
+    return;
+  }
+  if (pending.comparisonRequestId !== state.comparisonRequestId) {
+    return;
+  }
+  const activeMetrics = activeDetailMetrics();
+  if (!pending.metrics.every((metric) => activeMetrics.includes(metric))) {
+    return;
+  }
+
+  try {
+    const applied = await requestExtraSeriesForRange(pending.metrics, pending.range);
+    if (!applied || pending.comparisonRequestId !== state.comparisonRequestId) {
+      return;
+    }
+    state.lastDetailRangeLoadKey = pending.key;
+    renderLineCharts();
+  } catch (error) {
+    if (pending.comparisonRequestId === state.comparisonRequestId) {
+      renderMessage({ error: error.message || "Unable to load zoomed metric series." });
+    }
+  }
 }
 
 function mergeMetricSeries(existingSeries = {}, incomingSeries = {}, metric) {
@@ -721,12 +828,16 @@ function renderControls() {
     chip.addEventListener("click", async () => {
       const requestId = state.comparisonRequestId;
       const previous = new Set(state.activeDetailMetrics);
+      const wasActive = state.activeDetailMetrics.has(metric);
       state.activeDetailMetrics = new Set(
         VmafMetricMetadata.toggleDetailMetric([...state.activeDetailMetrics], metric),
       );
       try {
         if (state.activeDetailMetrics.has(metric)) {
           await requestExtraSeries(metric);
+          if (!wasActive) {
+            scheduleCurrentDetailRangeLoad([metric]);
+          }
         }
       } catch (error) {
         if (requestId !== state.comparisonRequestId) {
@@ -1042,31 +1153,17 @@ function renderLineCharts() {
   charts.zoom.on("datazoom", async () => {
     const metrics = activeDetailMetrics();
     if (!state.comparison || !metrics.length) {
+      cancelPendingDetailRangeLoad();
       return;
     }
 
-    const option = charts.zoom.getOption();
-    const zoom = (option.dataZoom || []).find((item) => Number.isFinite(item.start) && Number.isFinite(item.end));
-    if (!zoom) {
+    const range = currentDetailZoomRange();
+    if (!range) {
+      cancelPendingDetailRangeLoad();
       return;
     }
 
-    const rangeStart = Number(commonRange.start || 0);
-    const rangeEnd = Number(commonRange.end || 0);
-    const span = Math.max(0, rangeEnd - rangeStart);
-    const start = Math.max(rangeStart, Math.floor(rangeStart + (zoom.start / 100) * span));
-    const end = Math.min(rangeEnd, Math.ceil(rangeStart + (zoom.end / 100) * span));
-
-    if (end - start > 5000) {
-      return;
-    }
-
-    try {
-      await requestExtraSeriesForRange(metrics, { start, end });
-      renderCharts();
-    } catch (error) {
-      renderMessage({ error: error.message || "Unable to load zoomed metric series." });
-    }
+    scheduleDetailRangeLoad(metrics, range);
   });
 }
 
