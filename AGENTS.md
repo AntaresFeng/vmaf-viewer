@@ -6,7 +6,6 @@ This file gives coding agents durable, repository-specific guidance. Keep it con
 
 VMAF Compare is a local toolkit for comparing video encodes with Netflix VMAF:
 
-- Shell/Python dev scripts generate VMAF JSON and extract low-score frame bundles.
 - `vmaf-viewer` is a local FastAPI + static ECharts web app for comparing multiple `*_vmaf.json` files.
 - The comparison focus is degraded-video vs degraded-video ranking, not only "where one encode differs from the source."
 
@@ -26,6 +25,8 @@ Always use `uv` for Python environment management.
 ```bash
 uv sync
 uv run pytest -q
+node --test tests/static/*.test.mjs
+node --check src/vmaf_viewer/static/app.js
 uv run vmaf-viewer
 uv run vmaf-viewer /path/to/vmaf-jsons
 uv run vmaf-viewer --data-dir /path/to/vmaf-jsons
@@ -36,11 +37,11 @@ uv run python devscripts/fetch_echarts.py
 
 ## Key Scripts
 
-- `devscripts/vmaf_compare.sh`: compare one reference video against one or more distorted videos and write per-frame VMAF JSON.
-- `devscripts/extract_vmaf_frame_bundle.py`: export reference/distorted PNG bundles around selected low-VMAF frames.
 - `devscripts/fetch_echarts.py`: download and verify the vendored ECharts asset for the static viewer.
 
 ## Dependencies
+
+Check `pyproject.toml` for details. Available local tools:
 
 - Python 3.11+ managed with `uv`
 - `ffmpeg` with libvmaf support; verify with `ffmpeg -h filter=libvmaf`
@@ -49,23 +50,22 @@ uv run python devscripts/fetch_echarts.py
 
 ## Critical Constraints
 
-- Always ignore the entire `videos/` tree.
-- Always use `ts_sync_mode=nearest` in libvmaf commands unless a task explicitly investigates an alternative.
-- Do not hand-edit generated VMAF JSON outputs.
 - On Chinese Windows with PowerShell 5.1, explicitly pass `-Encoding UTF8` when reading or writing UTF-8 files.
 
 ## VMAF Viewer Notes
 
 - Package entrypoint: `vmaf-viewer = "vmaf_viewer.app:main"` in `pyproject.toml`.
 - Backend: `src/vmaf_viewer/app.py`, `compare.py`, `parser.py`, `scanner.py`, `stats.py`.
-- Frontend: `src/vmaf_viewer/static/index.html`, `app.js`, `styles.css`, plus vendored `vendor/echarts.min.js`.
+- Backend cache/data model helpers: `cache.py`, `models.py`.
+- Frontend: `src/vmaf_viewer/static/index.html`, `app.js`, `message_state.js`, `metric_metadata.js`, `styles.css`, plus vendored `vendor/echarts.min.js`.
 - API surface includes `/api/files`, `/api/data-dir`, `/api/compare`, `/api/file/{file_id}/metrics`, and `/api/series`.
-- Large JSON files and 4-6 way comparisons are expected; preserve downsampling and avoid loading unnecessary per-frame series in the initial comparison path.
-- For frontend changes, run `node --check src/vmaf_viewer/static/app.js` and `uv run pytest -q`.
+- Large JSON files and 4-6 way comparisons are expected; preserve downsampling, cache parsed files through `VmafCache`, and avoid loading unnecessary per-frame/detail series in the initial comparison path.
+- Static frontend tests live in `tests/static/` and use `browser_harness.mjs`; keep script loading order aligned with `index.html`.
+- For frontend changes, run `node --check` on changed static JS files, `node --test tests/static/*.test.mjs`, and `uv run pytest -q`.
 
 ## Documentation Links
 
-- Current feature/issues list: `docs/issues.md`
 - VMAF JSON schema: `docs/vmaf_schema.json`
 - VMAF zero-score investigation: `docs/vmaf-zero-score-issue.md` Essentially, it's frame synchronization.
 - fps filter / PTS normalization note: `docs/fps-filter-pts-normalization-side-effect.md`
+- Captured local FFmpeg libvmaf help: `docs/ffmpeg_help_libvamf.txt`

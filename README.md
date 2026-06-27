@@ -1,10 +1,39 @@
-﻿# VMAF Compare
+# VMAF Compare
 
-Local tools for comparing libvmaf JSON outputs from distorted video encodes.
+VMAF Compare is a local toolkit for inspecting and ranking libvmaf JSON output from multiple video encodes. It is built for the common workflow where you already generated one `*_vmaf.json` file per distorted encode and want to compare those degraded videos against each other, not only inspect where a single encode differs from the reference.
 
-## VMAF JSON Viewer
+The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend. It scans a directory of `*_vmaf.json` files, parses frame-level metrics, compares selected files over their shortest common frame range, and ranks them by mean VMAF by default.
 
-The viewer is a local web app managed with `uv`.
+## Screenshots
+
+![VMAF viewer overview](docs/assets/viewer-overview.jpg)
+
+![Detail metrics view](docs/assets/viewer-detail-metrics.jpg)
+
+![Distribution charts](docs/assets/viewer-distribution.jpg)
+
+## Features
+
+- Scan local directories for libvmaf JSON logs.
+- Compare 4-6 large VMAF JSON files without loading unnecessary detailed series up front.
+- Rank encodes by summary statistics such as mean VMAF and threshold counts.
+- Plot per-frame VMAF, local zoom/detail metrics, histograms, CDFs, and boxplots in a browser UI.
+- Switch the scan directory from the command line, environment variable, or the viewer's top `Dir` field.
+- Cache parsed files during a viewer session so repeated comparisons stay responsive.
+
+## Requirements
+
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/) for Python environment management
+- [`ffmpeg`](https://ffmpeg.org/) with libvmaf support if you generate VMAF JSON locally
+
+Check libvmaf support with:
+
+```bash
+ffmpeg -h filter=libvmaf
+```
+
+## Setup
 
 Install and sync dependencies:
 
@@ -12,23 +41,20 @@ Install and sync dependencies:
 uv sync
 ```
 
-Fetch the local ECharts asset:
+Fetch the vendored ECharts browser asset:
 
 ```bash
 uv run python devscripts/fetch_echarts.py
 ```
 
-Run the viewer:
+The fetch script downloads the pinned ECharts build and verifies its SHA-256 hash before replacing the local asset.
+
+## Run The Viewer
+
+Start the viewer with the default scan directory:
 
 ```bash
 uv run vmaf-viewer
-```
-
-Run the viewer with a scan directory:
-
-```bash
-uv run vmaf-viewer /path/to/vmaf-jsons
-uv run vmaf-viewer --data-dir /path/to/vmaf-jsons
 ```
 
 Open:
@@ -43,22 +69,48 @@ By default, the app scans:
 videos/
 ```
 
-Override the scan directory:
+Run the viewer with a specific scan directory:
+
+```bash
+uv run vmaf-viewer /path/to/vmaf-jsons
+uv run vmaf-viewer --data-dir /path/to/vmaf-jsons
+```
+
+Or set the environment variable first:
 
 ```bash
 $env:VMAF_VIEWER_DATA_DIR = "/path/to/vmaf-jsons"
 uv run vmaf-viewer
 ```
 
-The startup directory priority is `--data-dir`, then the positional directory, then `VMAF_VIEWER_DATA_DIR`, then `videos/`.
-You can also change the scan directory from the top `Dir` field in the web UI and press `Scan`.
+Startup scan-directory priority is:
 
-The app compares selected `*_vmaf.json` files over their shortest common frame range and ranks videos by mean VMAF by default.
+1. `--data-dir`
+2. positional directory argument
+3. `VMAF_VIEWER_DATA_DIR`
+4. `videos/`
+
+You can also change the scan directory from the top `Dir` field in the web UI and press `Scan`.
 
 ## Tests
 
-Run all tests through `uv`:
+Run the backend test suite:
 
 ```bash
-uv run pytest
+uv run pytest -q
 ```
+
+Run static frontend checks:
+
+```bash
+node --check src/vmaf_viewer/static/app.js
+node --test tests/static/*.test.mjs
+```
+
+## Third-party Notices
+
+The viewer vendors Apache ECharts for browser charts at `src/vmaf_viewer/static/vendor/echarts.min.js`. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for license and attribution details.
+
+## License
+
+VMAF Compare is released under the [MIT License](LICENSE). Vendored Apache ECharts remains available under the Apache License 2.0 as described in the third-party notices.

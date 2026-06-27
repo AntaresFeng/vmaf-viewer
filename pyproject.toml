@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Local web viewer for comparing libvmaf JSON outputs"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 dependencies = [
     "fastapi>=0.115.0",
     "orjson>=3.10.0",

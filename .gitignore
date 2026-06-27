@@ -11,10 +11,15 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
 
 # Local assistant/tooling state.
 .claude/
+.agents/
 .worktrees/
-.uv-cache/
 .superpowers/
 docs/superpowers/

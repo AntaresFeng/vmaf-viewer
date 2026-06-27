@@ -1,4 +1,4 @@
-# ffmpeg -h filter=libvmaf > ffmpeg_help_libvamf.txt
+# ffmpeg -h filter=libvmaf > docs/ffmpeg_help_libvamf.txt
 
 Filter libvmaf
   Calculate the VMAF between two video streams.
