@@ -89,7 +89,10 @@ def test_ytdlp_config_text_locks_outputs_to_project(
     tmp_path: Path,
 ) -> None:
     project = create_project(tmp_path / "videos")
-    settings = YtDlpSettings(format_selector="bestvideo[height>=1080]")
+    settings = YtDlpSettings(
+        format_selector="bestvideo[height>=1080]",
+        output_template="%(id)s-%(format_note)s-%(vcodec)s.%(ext)s",
+    )
 
     text = ytdlp_config_text(project, settings)
 
@@ -101,9 +104,9 @@ def test_ytdlp_config_text_locks_outputs_to_project(
     assert "--no-clean-infojson" in text
     assert f"-P home:{project.video_dir}" in text
     assert f"-P temp:{project.video_dir / '.yt-dlp-temp'}" in text
-    assert "%(title)s [%(id)s].%(ext)s" in text
+    assert "%(id)s-%(format_note)s-%(vcodec)s.%(ext)s" in text
     assert str(project.ytdlp_infojson_dir) in text
-    assert "%(title)s [%(id)s].info.json" in text
+    assert "%(id)s-%(format_note)s-%(vcodec)s.info.json" in text
     assert (
         f"--print-to-file after_video:%()j {project.ytdlp_after_video_jsonl_path}"
         in text

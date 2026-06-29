@@ -109,8 +109,11 @@ def bbdown_config_text(project: WorkflowProject, settings: BBDownSettings) -> st
 
 def ytdlp_config_text(project: WorkflowProject, settings: YtDlpSettings) -> str:
     temp_dir = project.video_dir / ".yt-dlp-temp"
-    output_template = "%(title)s [%(id)s].%(ext)s"
-    infojson_template = str(project.ytdlp_infojson_dir / "%(title)s [%(id)s].info.json")
+    output_template = settings.output_template
+    infojson_template = str(
+        project.ytdlp_infojson_dir
+        / _replace_output_template_ext(output_template, ".info.json")
+    )
     return "\n".join(
         (
             "--ignore-config",
@@ -130,6 +133,17 @@ def ytdlp_config_text(project: WorkflowProject, settings: YtDlpSettings) -> str:
             "",
         )
     )
+
+
+def _replace_output_template_ext(output_template: str, suffix: str) -> str:
+    dotted_ext_token = ".%(ext)s"
+    if output_template.endswith(dotted_ext_token):
+        return f"{output_template[: -len(dotted_ext_token)]}{suffix}"
+
+    ext_token = "%(ext)s"
+    if output_template.endswith(ext_token):
+        return f"{output_template[: -len(ext_token)]}{suffix}"
+    return f"{output_template}{suffix}"
 
 
 def write_text(path: Path, text: str) -> None:

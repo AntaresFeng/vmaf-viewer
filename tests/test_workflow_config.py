@@ -37,6 +37,9 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
     assert settings.ytdlp.format_selector == (
         "all[height>=1080][vcodec!=none][acodec=none]"
     )
+    assert settings.ytdlp.output_template == (
+        "%(id)s-%(format_note)s-%(vcodec)s.%(ext)s"
+    )
     assert YTDLP_FORMAT_SELECTOR == "all[height>=1080][vcodec!=none][acodec=none]"
 
 

@@ -37,6 +37,7 @@ class BBDownSettings:
 class YtDlpSettings:
     exe_path: Path = Path(r"D:\YTDown\yt-dlp.exe")
     format_selector: str = YTDLP_FORMAT_SELECTOR
+    output_template: str = "%(id)s-%(format_note)s-%(vcodec)s.%(ext)s"
 
 
 @dataclass(frozen=True)
