@@ -1,26 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from vmaf_workflow.config import YTDLP_FORMAT_SELECTOR
+from vmaf_workflow.config import YTDLP_FORMAT_SELECTOR, is_target_format
 from vmaf_workflow.models import StreamRecord
-
-
-@dataclass(frozen=True)
-class YtDlpStreamRecord(StreamRecord):
-    source: str = "youtube"
-    index: int | None = None
-    width: int | None = None
-    height: int | None = None
-    codec_family: str | None = None
-    bitrate_source: str | None = None
-    format_id: str | None = None
-    ext: str | None = None
-    protocol: str | None = None
-    container: str | None = None
 
 
 def codec_family(vcodec: str | None) -> str | None:
@@ -41,7 +27,7 @@ def codec_family(vcodec: str | None) -> str | None:
 
 def normalize_ytdlp_format(
     format_info: dict[str, Any], index: int | None
-) -> YtDlpStreamRecord:
+) -> StreamRecord:
     width = _optional_int(format_info.get("width"))
     height = _optional_int(format_info.get("height"))
     resolution = format_info.get("resolution")
@@ -60,7 +46,8 @@ def normalize_ytdlp_format(
 
     vcodec = format_info.get("vcodec")
 
-    return YtDlpStreamRecord(
+    return StreamRecord(
+        source="youtube",
         index=index,
         quality_label=format_info.get("format_note"),
         resolution=resolution,
@@ -81,26 +68,32 @@ def normalize_ytdlp_format(
     )
 
 
+def _normalize_target_many(
+    formats: Iterable[dict[str, Any]] | None, index: int | None = None
+) -> list[StreamRecord]:
+    return [
+        normalize_ytdlp_format(format_info, index)
+        for format_info in formats or []
+        if is_target_format(format_info)
+    ]
+
+
 def parse_ytdlp_preflight(
     raw_info: dict[str, Any],
-) -> tuple[list[YtDlpStreamRecord], list[YtDlpStreamRecord]]:
+) -> tuple[list[StreamRecord], list[StreamRecord]]:
     selected = [
         normalize_ytdlp_format(format_info, index)
         for index, format_info in enumerate(raw_info.get("formats") or [])
-        if _is_target_format(format_info)
+        if is_target_format(format_info)
     ]
-    requested = [
-        normalize_ytdlp_format(format_info, None)
-        for format_info in raw_info.get("requested_downloads") or []
-        if _is_target_format(format_info)
-    ]
+    requested = _normalize_target_many(raw_info.get("requested_downloads"))
     return selected, requested
 
 
-def load_after_video_downloads(path: str | Path) -> list[YtDlpStreamRecord]:
+def load_after_video_downloads(path: str | Path) -> list[StreamRecord]:
     if not Path(path).exists():
         return []
-    streams: list[YtDlpStreamRecord] = []
+    streams: list[StreamRecord] = []
     with Path(path).open("r", encoding="utf-8") as handle:
         for line in handle:
             stripped = line.strip()
@@ -109,27 +102,19 @@ def load_after_video_downloads(path: str | Path) -> list[YtDlpStreamRecord]:
             raw_info = _loads_json_object(stripped)
             if raw_info is None:
                 continue
-            streams.extend(
-                normalize_ytdlp_format(format_info, None)
-                for format_info in raw_info.get("requested_downloads") or []
-                if _is_target_format(format_info)
-            )
+            streams.extend(_normalize_target_many(raw_info.get("requested_downloads")))
     return streams
 
 
-def load_sidecar_downloads(infojson_dir: str | Path) -> list[YtDlpStreamRecord]:
-    streams: list[YtDlpStreamRecord] = []
+def load_sidecar_downloads(infojson_dir: str | Path) -> list[StreamRecord]:
+    streams: list[StreamRecord] = []
     for infojson_path in sorted(Path(infojson_dir).glob("*.info.json")):
         raw_info = _loads_json_object(infojson_path.read_text(encoding="utf-8"))
         if raw_info is None:
             continue
-        if _is_target_format(raw_info):
+        if is_target_format(raw_info):
             streams.append(normalize_ytdlp_format(raw_info, None))
-        streams.extend(
-            normalize_ytdlp_format(format_info, None)
-            for format_info in raw_info.get("requested_downloads") or []
-            if _is_target_format(format_info)
-        )
+        streams.extend(_normalize_target_many(raw_info.get("requested_downloads")))
     return streams
 
 
@@ -139,18 +124,6 @@ def _loads_json_object(text: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return raw_info if isinstance(raw_info, dict) else None
-
-
-def _is_target_format(format_info: dict[str, Any]) -> bool:
-    height = _optional_int(format_info.get("height"))
-    vcodec = format_info.get("vcodec")
-    return (
-        height is not None
-        and height >= 1080
-        and vcodec is not None
-        and vcodec != "none"
-        and format_info.get("acodec") == "none"
-    )
 
 
 def _optional_int(value: Any) -> int | None:

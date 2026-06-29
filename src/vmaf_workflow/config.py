@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 QUALITY_LABELS: tuple[str, ...] = (
@@ -21,7 +22,31 @@ HIGH_1080_LABELS: tuple[str, ...] = (
 
 FALLBACK_1080_LABEL = "1080P 高清"
 
+# yt-dlp CLI format selector. `is_target_format` below must mirror this filter
+# when post-processing yt-dlp JSON output, so the two are kept together.
 YTDLP_FORMAT_SELECTOR = "all[height>=1080][vcodec!=none][acodec=none]"
+
+
+def is_target_format(format_info: dict[str, Any]) -> bool:
+    """Mirror the YTDLP_FORMAT_SELECTOR for parsed JSON format dicts."""
+    height = _coerce_int(format_info.get("height"))
+    vcodec = format_info.get("vcodec")
+    return (
+        height is not None
+        and height >= 1080
+        and vcodec is not None
+        and vcodec != "none"
+        and format_info.get("acodec") == "none"
+    )
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass(frozen=True)

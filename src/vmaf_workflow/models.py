@@ -10,12 +10,23 @@ Manifest = dict[str, Any]
 @dataclass(frozen=True)
 class StreamRecord:
     quality_label: str
+    # Optional fields populated by per-source normalizers (BBDown / yt-dlp).
+    source: str | None = None
+    index: int | None = None
     resolution: str | None = None
+    width: int | None = None
+    height: int | None = None
     codec: str | None = None
+    codec_family: str | None = None
     fps: float | None = None
     bitrate_kbps: float | None = None
+    bitrate_source: str | None = None
     size_text: str | None = None
     size_bytes: int | None = None
+    format_id: str | None = None
+    ext: str | None = None
+    protocol: str | None = None
+    container: str | None = None
     raw: Manifest | None = None
 
     def signature(self) -> str:
@@ -32,23 +43,23 @@ class StreamRecord:
 
     def to_manifest(self) -> Manifest:
         return {
-            "source": getattr(self, "source", None),
-            "index": getattr(self, "index", None),
+            "source": self.source,
+            "index": self.index,
             "quality_label": self.quality_label,
             "resolution": self.resolution,
-            "width": getattr(self, "width", None),
-            "height": getattr(self, "height", None),
+            "width": self.width,
+            "height": self.height,
             "codec": self.codec,
-            "codec_family": getattr(self, "codec_family", None),
+            "codec_family": self.codec_family,
             "fps": self.fps,
             "bitrate_kbps": self.bitrate_kbps,
-            "bitrate_source": getattr(self, "bitrate_source", None),
+            "bitrate_source": self.bitrate_source,
             "size_text": self.size_text,
             "size_bytes": self.size_bytes,
-            "format_id": getattr(self, "format_id", None),
-            "ext": getattr(self, "ext", None),
-            "protocol": getattr(self, "protocol", None),
-            "container": getattr(self, "container", None),
+            "format_id": self.format_id,
+            "ext": self.ext,
+            "protocol": self.protocol,
+            "container": self.container,
         }
 
 

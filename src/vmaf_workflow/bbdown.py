@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -20,17 +19,6 @@ _STREAM_LINE_RE = re.compile(
 )
 
 
-@dataclass(frozen=True)
-class BBDownStreamRecord(StreamRecord):
-    source: str = "bilibili"
-    index: int | None = None
-    width: int | None = None
-    height: int | None = None
-    codec_family: str | None = None
-    bitrate_source: str | None = None
-    ext: str | None = None
-
-
 def parse_bbdown_streams(output: str) -> list[StreamRecord]:
     streams: list[StreamRecord] = []
     for line in output.splitlines():
@@ -40,7 +28,8 @@ def parse_bbdown_streams(output: str) -> list[StreamRecord]:
 
         codec = match.group("codec")
         streams.append(
-            BBDownStreamRecord(
+            StreamRecord(
+                source="bilibili",
                 index=int(match.group("index")),
                 quality_label=match.group("label"),
                 resolution=match.group("resolution"),
@@ -77,16 +66,17 @@ def build_bilibili_plan(
 
     plan: list[StreamRecord] = []
     for stream in stream_list:
-        stream_index = _stream_index(stream)
         if stream.quality_label not in target_labels:
-            _append_known_index(skipped["quality_label_below_target"], stream_index)
+            if stream.index is not None:
+                skipped["quality_label_below_target"].append(stream.index)
             continue
 
         if (
             stream.quality_label == config.FALLBACK_1080_LABEL
             and stream.codec in high_1080_codecs
         ):
-            _append_known_index(skipped["shadowed_by_higher_1080_label"], stream_index)
+            if stream.index is not None:
+                skipped["shadowed_by_higher_1080_label"].append(stream.index)
             continue
 
         plan.append(stream)
@@ -98,22 +88,9 @@ def find_stream_index(
     planned: StreamRecord, fresh_streams: Iterable[StreamRecord]
 ) -> int | None:
     for fresh in fresh_streams:
-        if (
-            fresh.signature() == planned.signature()
-            and _stream_index(fresh) is not None
-        ):
-            return _stream_index(fresh)
+        if fresh.index is not None and fresh.signature() == planned.signature():
+            return fresh.index
     return None
-
-
-def _stream_index(stream: StreamRecord) -> int | None:
-    value = getattr(stream, "index", None)
-    return value if isinstance(value, int) else None
-
-
-def _append_known_index(indexes: list[int], value: int | None) -> None:
-    if value is not None:
-        indexes.append(value)
 
 
 def bbdown_info_argv(exe_path: Path, bvid: str, config_path: Path) -> list[str]:
