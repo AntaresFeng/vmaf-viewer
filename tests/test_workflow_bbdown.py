@@ -91,3 +91,30 @@ def test_find_stream_index_matches_signature_when_fresh_index_changes() -> None:
     )
 
     assert find_stream_index(planned, fresh_streams) == 7
+
+
+def test_find_stream_index_ignores_changed_size_estimate() -> None:
+    planned = parse_bbdown_streams(
+        "2. [1080P 高帧率] [1920x822] [HEVC] [60.000] [4500 kbps] [~120.00 MB]"
+    )[0]
+    fresh_streams = parse_bbdown_streams(
+        "7. [1080P 高帧率] [1920x822] [HEVC] [60.000] [4500 kbps] [~120.01 MB]"
+    )
+
+    assert find_stream_index(planned, fresh_streams) == 7
+
+
+def test_find_stream_index_uses_first_matching_duplicate() -> None:
+    planned = parse_bbdown_streams(
+        "2. [1080P 高清] [1920x1080] [AVC] [30.000] [3000 kbps] [~100.00 MB]"
+    )[0]
+    fresh_streams = parse_bbdown_streams(
+        "\n".join(
+            [
+                "8. [1080P 高清] [1920x1080] [AVC] [30.000] [3000 kbps] [~100.01 MB]",
+                "9. [1080P 高清] [1920x1080] [AVC] [30.000] [3000 kbps] [~100.02 MB]",
+            ]
+        )
+    )
+
+    assert find_stream_index(planned, fresh_streams) == 8

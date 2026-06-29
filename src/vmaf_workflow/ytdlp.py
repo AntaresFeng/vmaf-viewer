@@ -106,7 +106,9 @@ def load_after_video_downloads(path: str | Path) -> list[YtDlpStreamRecord]:
             stripped = line.strip()
             if not stripped:
                 continue
-            raw_info = json.loads(stripped)
+            raw_info = _loads_json_object(stripped)
+            if raw_info is None:
+                continue
             streams.extend(
                 normalize_ytdlp_format(format_info, None)
                 for format_info in raw_info.get("requested_downloads") or []
@@ -118,7 +120,9 @@ def load_after_video_downloads(path: str | Path) -> list[YtDlpStreamRecord]:
 def load_sidecar_downloads(infojson_dir: str | Path) -> list[YtDlpStreamRecord]:
     streams: list[YtDlpStreamRecord] = []
     for infojson_path in sorted(Path(infojson_dir).glob("*.info.json")):
-        raw_info = json.loads(infojson_path.read_text(encoding="utf-8"))
+        raw_info = _loads_json_object(infojson_path.read_text(encoding="utf-8"))
+        if raw_info is None:
+            continue
         if _is_target_format(raw_info):
             streams.append(normalize_ytdlp_format(raw_info, None))
         streams.extend(
@@ -127,6 +131,14 @@ def load_sidecar_downloads(infojson_dir: str | Path) -> list[YtDlpStreamRecord]:
             if _is_target_format(format_info)
         )
     return streams
+
+
+def _loads_json_object(text: str) -> dict[str, Any] | None:
+    try:
+        raw_info = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return raw_info if isinstance(raw_info, dict) else None
 
 
 def _is_target_format(format_info: dict[str, Any]) -> bool:

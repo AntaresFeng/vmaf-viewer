@@ -61,6 +61,15 @@ def test_normalize_youtube_url_accepts_id_short_url_and_watch_url() -> None:
     )
 
 
+@pytest.mark.parametrize("path_prefix", ["shorts", "embed", "live"])
+def test_normalize_youtube_url_accepts_path_id_forms(path_prefix: str) -> None:
+    video_id = "dQw4w9WgXcQ"
+
+    assert normalize_youtube_url(
+        f"https://www.youtube.com/{path_prefix}/{video_id}"
+    ) == (f"https://www.youtube.com/watch?v={video_id}")
+
+
 def test_normalize_youtube_url_raises_when_missing_video_id() -> None:
     with pytest.raises(ValueError, match="YouTube"):
         normalize_youtube_url("https://www.youtube.com/@example")

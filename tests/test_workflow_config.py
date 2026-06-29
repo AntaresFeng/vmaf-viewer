@@ -1,8 +1,6 @@
 from pathlib import Path
 import tomllib
 
-import pytest
-
 from vmaf_workflow.config import (
     FALLBACK_1080_LABEL,
     HIGH_1080_LABELS,
@@ -10,7 +8,7 @@ from vmaf_workflow.config import (
     YTDLP_FORMAT_SELECTOR,
     default_settings,
 )
-from vmaf_workflow.models import StreamRecord
+from vmaf_workflow.models import DownloadDecision, StreamRecord
 
 
 def test_pyproject_exposes_workflow_console_script_and_package():
@@ -63,28 +61,29 @@ def test_quality_labels_use_exact_order_and_define_1080_fallback():
     assert FALLBACK_1080_LABEL == "1080P 高清"
 
 
-@pytest.mark.parametrize(
-    ("size_text", "size_bytes", "expected_size"),
-    [
-        ("123.4 MiB", 987654, "123.4 MiB"),
-        (None, 987654, "987654"),
-    ],
-)
-def test_stream_record_signature_prefers_size_text_then_size_bytes(
-    size_text, size_bytes, expected_size
-):
+def test_stream_record_signature_ignores_volatile_size_estimates():
     record = StreamRecord(
         quality_label="1080P 高码率",
         resolution="1920x1080",
         codec="avc",
         fps=60.0,
         bitrate_kbps=4500,
-        size_text=size_text,
-        size_bytes=size_bytes,
+        size_text="123.4 MiB",
+        size_bytes=987654,
         raw={"volatile": True},
     )
+    same_stream_new_estimate = StreamRecord(
+        quality_label="1080P 高码率",
+        resolution="1920x1080",
+        codec="avc",
+        fps=60.0,
+        bitrate_kbps=4500,
+        size_text="123.5 MiB",
+        size_bytes=987655,
+    )
 
-    assert record.signature() == f"1080P 高码率|1920x1080|avc|60.0|4500|{expected_size}"
+    assert record.signature() == "1080P 高码率|1920x1080|avc|60.0|4500"
+    assert same_stream_new_estimate.signature() == record.signature()
     assert record.to_manifest() == {
         "source": None,
         "index": None,
@@ -97,10 +96,22 @@ def test_stream_record_signature_prefers_size_text_then_size_bytes(
         "fps": 60.0,
         "bitrate_kbps": 4500,
         "bitrate_source": None,
-        "size_text": size_text,
-        "size_bytes": size_bytes,
+        "size_text": "123.4 MiB",
+        "size_bytes": 987654,
         "format_id": None,
         "ext": None,
         "protocol": None,
         "container": None,
+    }
+
+
+def test_download_decision_manifest_omits_unused_null_fields():
+    manifest = DownloadDecision(downloader="yt-dlp").to_manifest()
+
+    assert manifest == {
+        "downloader": "yt-dlp",
+        "stream": None,
+        "status": "planned",
+        "reason": None,
+        "command": None,
     }

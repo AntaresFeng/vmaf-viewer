@@ -6,22 +6,7 @@ import pytest
 
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult
-from vmaf_workflow.runner import DryRunRunner, SubprocessRunner
-
-
-def test_dry_run_runner_records_command_and_stdin() -> None:
-    runner = DryRunRunner()
-
-    result = runner.run(["bbdown", "--select-page", "1"], stdin="input text")
-
-    assert result == CommandResult(
-        ("bbdown", "--select-page", "1"),
-        0,
-        "",
-        "",
-        "input text",
-    )
-    assert runner.commands == [result]
+from vmaf_workflow.runner import SubprocessRunner
 
 
 def test_subprocess_runner_uses_safe_capture_options(monkeypatch) -> None:
@@ -47,6 +32,8 @@ def test_subprocess_runner_uses_safe_capture_options(monkeypatch) -> None:
                 "input": "url",
                 "text": True,
                 "capture_output": True,
+                "encoding": "utf-8",
+                "errors": "replace",
                 "shell": False,
                 "check": False,
             },

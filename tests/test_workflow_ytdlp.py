@@ -133,6 +133,26 @@ def test_load_after_video_downloads_reads_jsonl_requested_downloads(tmp_path) ->
     assert [stream.index for stream in streams] == [None, None]
 
 
+def test_load_after_video_downloads_skips_malformed_jsonl_lines(tmp_path) -> None:
+    jsonl_path = tmp_path / "after_video.jsonl"
+    jsonl_path.write_text(
+        "\n".join(
+            [
+                '{"requested_downloads":[{"format_id":"137","height":1080,'
+                '"vcodec":"avc1","acodec":"none"}]}',
+                '{"requested_downloads":',
+                '{"requested_downloads":[{"format_id":"399","height":1080,'
+                '"vcodec":"av01","acodec":"none"}]}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    streams = load_after_video_downloads(jsonl_path)
+
+    assert [stream.format_id for stream in streams] == ["137", "399"]
+
+
 def test_load_sidecar_downloads_reads_infojson_target_formats(tmp_path) -> None:
     first = tmp_path / "one.info.json"
     first.write_text(
@@ -168,3 +188,17 @@ def test_load_sidecar_downloads_reads_infojson_target_formats(tmp_path) -> None:
 
     assert [stream.format_id for stream in streams] == ["401", "137"]
     assert [stream.index for stream in streams] == [None, None]
+
+
+def test_load_sidecar_downloads_skips_malformed_infojson_files(tmp_path) -> None:
+    (tmp_path / "broken.info.json").write_text("{", encoding="utf-8")
+    (tmp_path / "valid.info.json").write_text(
+        json.dumps(
+            {"format_id": "401", "height": 2160, "vcodec": "av01", "acodec": "none"}
+        ),
+        encoding="utf-8",
+    )
+
+    streams = load_sidecar_downloads(tmp_path)
+
+    assert [stream.format_id for stream in streams] == ["401"]

@@ -10,6 +10,7 @@ from vmaf_workflow.config import BBDownSettings, YtDlpSettings
 
 BVID_RE = re.compile(r"BV[0-9A-Za-z]{10}")
 YOUTUBE_ID_RE = re.compile(r"^[0-9A-Za-z_-]{11}$")
+YOUTUBE_PATH_ID_PREFIXES = {"shorts", "embed", "live"}
 
 
 @dataclass(frozen=True)
@@ -84,12 +85,21 @@ def normalize_youtube_url(value: str) -> str:
             video_id = parsed.path.lstrip("/").split("/", 1)[0]
         elif host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
             video_id = parse_qs(parsed.query).get("v", [""])[0]
+            if not video_id:
+                video_id = _youtube_path_video_id(parsed.path)
         else:
             video_id = ""
 
     if not YOUTUBE_ID_RE.fullmatch(video_id):
         raise ValueError("YouTube video id is required")
     return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _youtube_path_video_id(path: str) -> str:
+    parts = [part for part in path.split("/") if part]
+    if len(parts) >= 2 and parts[0] in YOUTUBE_PATH_ID_PREFIXES:
+        return parts[1]
+    return ""
 
 
 def bbdown_config_text(project: WorkflowProject, settings: BBDownSettings) -> str:

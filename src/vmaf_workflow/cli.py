@@ -180,17 +180,27 @@ def _run_bilibili_downloads(
     manifest["bilibili"]["skipped"] = skipped
 
     exit_code = 0
-    for stream in plan:
+    fresh_streams = []
+    if plan:
         fresh_result = runner.run(
             bbdown_info_argv(settings.bbdown.exe_path, bvid, project.bbdown_config_path)
         )
         _append_command(manifest, fresh_result)
+        if fresh_result.returncode != 0:
+            for stream in plan:
+                manifest["bilibili"]["downloads"].append(
+                    DownloadDecision(
+                        downloader="bbdown",
+                        stream=stream,
+                        status="skipped",
+                        reason="bbdown_refresh_failed_before_download",
+                    ).to_manifest()
+                )
+            return 1
         fresh_streams = parse_bbdown_streams(fresh_result.stdout)
-        selected_index = (
-            find_stream_index(stream, fresh_streams)
-            if fresh_result.returncode == 0
-            else None
-        )
+
+    for stream in plan:
+        selected_index = find_stream_index(stream, fresh_streams)
         if selected_index is None:
             manifest["bilibili"]["downloads"].append(
                 DownloadDecision(
@@ -247,7 +257,21 @@ def _run_youtube_downloads(
 
     project.ytdlp_preflight_path.write_text(preflight_result.stdout, encoding="utf-8")
     manifest["youtube"]["preflight_raw_json"] = str(project.ytdlp_preflight_path)
-    raw_ytdlp = json.loads(preflight_result.stdout)
+    try:
+        raw_ytdlp = json.loads(preflight_result.stdout)
+    except json.JSONDecodeError:
+        raw_ytdlp = None
+
+    if not isinstance(raw_ytdlp, dict):
+        manifest["youtube"]["downloads"].append(
+            DownloadDecision(
+                downloader="yt-dlp",
+                status="failed",
+                reason="youtube_preflight_json_invalid",
+                command=preflight_result,
+            ).to_manifest()
+        )
+        return 1
     selected_streams, requested_streams = parse_ytdlp_preflight(raw_ytdlp)
     manifest["youtube"]["preflight_streams"] = [
         stream.to_manifest() for stream in selected_streams
@@ -262,11 +286,24 @@ def _run_youtube_downloads(
         )
     )
     _append_command(manifest, download_result)
-    actual_downloads = (
-        load_after_video_downloads(project.ytdlp_after_video_jsonl_path)
-        or load_sidecar_downloads(project.ytdlp_infojson_dir)
-        or requested_streams
-    )
+    actual_downloads = load_after_video_downloads(
+        project.ytdlp_after_video_jsonl_path
+    ) or load_sidecar_downloads(project.ytdlp_infojson_dir)
+    if not actual_downloads:
+        manifest["youtube"]["downloads"].append(
+            DownloadDecision(
+                downloader="yt-dlp",
+                status="failed",
+                reason=(
+                    "youtube_download_metadata_missing"
+                    if download_result.returncode == 0
+                    else "youtube_download_failed"
+                ),
+                command=download_result,
+            ).to_manifest()
+        )
+        return 1
+
     manifest["youtube"]["downloads"] = [
         DownloadDecision(
             downloader="yt-dlp",

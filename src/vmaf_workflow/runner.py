@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import subprocess
 
 from vmaf_workflow.models import CommandResult
@@ -13,6 +12,8 @@ class SubprocessRunner:
             input=stdin,
             text=True,
             capture_output=True,
+            encoding="utf-8",
+            errors="replace",
             shell=False,
             check=False,
         )
@@ -23,13 +24,3 @@ class SubprocessRunner:
             completed.stderr,
             stdin,
         )
-
-
-@dataclass
-class DryRunRunner:
-    commands: list[CommandResult] = field(default_factory=list)
-
-    def run(self, argv: list[str], stdin: str | None = None) -> CommandResult:
-        result = CommandResult(tuple(argv), 0, "", "", stdin)
-        self.commands.append(result)
-        return result

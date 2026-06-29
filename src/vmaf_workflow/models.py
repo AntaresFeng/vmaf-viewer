@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 
@@ -20,7 +19,6 @@ class StreamRecord:
     raw: Manifest | None = None
 
     def signature(self) -> str:
-        size = self.size_text if self.size_text is not None else self.size_bytes
         return "|".join(
             "" if value is None else str(value)
             for value in (
@@ -29,7 +27,6 @@ class StreamRecord:
                 self.codec,
                 self.fps,
                 self.bitrate_kbps,
-                size,
             )
         )
 
@@ -79,8 +76,6 @@ class DownloadDecision:
     stream: StreamRecord | None = None
     status: str = "planned"
     reason: str | None = None
-    fallback_label: str | None = None
-    output_path: Path | None = None
     command: CommandResult | None = None
 
     def to_manifest(self) -> Manifest:
@@ -89,9 +84,5 @@ class DownloadDecision:
             "stream": None if self.stream is None else self.stream.to_manifest(),
             "status": self.status,
             "reason": self.reason,
-            "fallback_label": self.fallback_label,
-            "output_path": str(self.output_path)
-            if self.output_path is not None
-            else None,
             "command": None if self.command is None else self.command.to_manifest(),
         }

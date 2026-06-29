@@ -97,14 +97,13 @@ def build_bilibili_plan(
 def find_stream_index(
     planned: StreamRecord, fresh_streams: Iterable[StreamRecord]
 ) -> int | None:
-    matches = [
-        fresh
-        for fresh in fresh_streams
-        if fresh.signature() == planned.signature() and _stream_index(fresh) is not None
-    ]
-    if len(matches) != 1:
-        return None
-    return _stream_index(matches[0])
+    for fresh in fresh_streams:
+        if (
+            fresh.signature() == planned.signature()
+            and _stream_index(fresh) is not None
+        ):
+            return _stream_index(fresh)
+    return None
 
 
 def _stream_index(stream: StreamRecord) -> int | None:
