@@ -25,30 +25,54 @@
           },
           "metrics": {
             "type": "object",
-            "description": "Metric names and values vary by model/feature. At least one VMAF score is present.",
+            "description": "Per-frame metric values. Keys vary by libvmaf model and feature configuration. At least one VMAF score is always present.",
             "properties": {
-              "vmaf":       { "type": "number", "description": "VMAF score (0-100), default model" },
-              "vmaf_hd":    { "type": "number", "description": "VMAF HD model score" },
-              "vmaf_hd_neg":    { "type": "number", "description": "VMAF HD NEG model score" },
-              "vmaf_hd_phone":  { "type": "number", "description": "VMAF HD phone model score" },
-              "integer_adm2":       { "type": "number" },
-              "integer_adm_scale0": { "type": "number" },
-              "integer_adm_scale1": { "type": "number" },
-              "integer_adm_scale2": { "type": "number" },
-              "integer_adm_scale3": { "type": "number" },
-              "integer_vif_scale0": { "type": "number" },
-              "integer_vif_scale1": { "type": "number" },
-              "integer_vif_scale2": { "type": "number" },
-              "integer_vif_scale3": { "type": "number" },
-              "integer_motion":     { "type": "number" },
-              "integer_motion2":    { "type": "number" },
-              "psnr_y":  { "type": "number" },
-              "psnr_cb": { "type": "number" },
-              "psnr_cr": { "type": "number" }
+              "vmaf":          { "type": "number", "description": "VMAF score (0-100), default/NHD model" },
+              "vmaf_hd":       { "type": "number", "description": "VMAF HD model score (libvmaf: version=vmaf_v0.6.1:name=vmaf_hd)" },
+              "vmaf_hd_neg":   { "type": "number", "description": "VMAF HD NEG model score (libvmaf: version=vmaf_v0.6.1neg:name=vmaf_hd_neg)" },
+              "vmaf_hd_phone": { "type": "number", "description": "VMAF HD phone model score (libvmaf: version=vmaf_v0.6.1:name=vmaf_hd_phone:enable_transform=true)" },
+              "vmaf_4k":       { "type": "number", "description": "VMAF 4K model score (libvmaf: version=vmaf_4k_v0.6.1:name=vmaf_4k)" },
+
+              "integer_adm2":          { "type": "number", "description": "ADM (detail metric) level-2" },
+              "integer_adm2_egl_1":    { "type": "number", "description": "ADM level-2 with EGL upsampling" },
+              "integer_adm3":          { "type": "number", "description": "ADM level-3" },
+              "integer_adm3_egl_1":    { "type": "number", "description": "ADM level-3 with EGL upsampling" },
+              "integer_adm_scale0":    { "type": "number", "description": "ADM scale-0" },
+              "integer_adm_scale0_egl_1": { "type": "number", "description": "ADM scale-0 with EGL upsampling" },
+              "integer_adm_scale1":    { "type": "number", "description": "ADM scale-1" },
+              "integer_adm_scale1_egl_1": { "type": "number", "description": "ADM scale-1 with EGL upsampling" },
+              "integer_adm_scale2":    { "type": "number", "description": "ADM scale-2" },
+              "integer_adm_scale2_egl_1": { "type": "number", "description": "ADM scale-2 with EGL upsampling" },
+              "integer_adm_scale3":    { "type": "number", "description": "ADM scale-3" },
+              "integer_adm_scale3_egl_1": { "type": "number", "description": "ADM scale-3 with EGL upsampling" },
+
+              "integer_aim":        { "type": "number", "description": "AIM (temporal information metric)" },
+              "integer_aim_egl_1":  { "type": "number", "description": "AIM with EGL upsampling" },
+
+              "integer_vif_scale0": { "type": "number", "description": "VIF (information fidelity) scale-0" },
+              "integer_vif_scale0_egl_1": { "type": "number", "description": "VIF scale-0 with EGL upsampling" },
+              "integer_vif_scale1": { "type": "number", "description": "VIF scale-1" },
+              "integer_vif_scale1_egl_1": { "type": "number", "description": "VIF scale-1 with EGL upsampling" },
+              "integer_vif_scale2": { "type": "number", "description": "VIF scale-2" },
+              "integer_vif_scale2_egl_1": { "type": "number", "description": "VIF scale-2 with EGL upsampling" },
+              "integer_vif_scale3": { "type": "number", "description": "VIF scale-3" },
+              "integer_vif_scale3_egl_1": { "type": "number", "description": "VIF scale-3 with EGL upsampling" },
+
+              "integer_motion":     { "type": "number", "description": "Motion score" },
+              "integer_motion2":    { "type": "number", "description": "Motion score variant-2" },
+              "integer_motion3":    { "type": "number", "description": "Motion score variant-3" },
+
+              "psnr_y":  { "type": "number", "description": "PSNR luminance (Y)" },
+              "psnr_cb": { "type": "number", "description": "PSNR blue-difference chroma (Cb)" },
+              "psnr_cr": { "type": "number", "description": "PSNR red-difference chroma (Cr)" },
+
+              "float_ssim":    { "type": "number", "description": "Structural Similarity (SSIM)" },
+              "float_ms_ssim": { "type": "number", "description": "Multi-Scale SSIM" },
+              "cambi":         { "type": "number", "description": "Contrast Aware Multiscale Banding Index (CAMBI)" }
             },
             "additionalProperties": {
               "type": "number",
-              "description": "Any additional float metric (e.g. integer_aim, integer_adm3, integer_motion3, _egl_1 variants, float_ssim, float_ms_ssim, cambi)"
+              "description": "Catch-all for any additional numeric metric emitted by newer or custom libvmaf builds"
             }
           }
         }
