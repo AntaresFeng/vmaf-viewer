@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from vmaf_workflow.cli import main
 from vmaf_workflow.models import CommandResult
 
@@ -64,6 +66,48 @@ def test_download_dry_run_creates_project_configs_and_manifest(
     assert manifest["bilibili"]["bvid"] == "BV1xx411c7mD"
     assert manifest["youtube"]["url"] == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     assert manifest["commands"] == []
+
+
+def test_download_dry_run_uses_explicit_project_dir_without_next_video(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "manual-project"
+    project_dir.mkdir()
+    existing_file = project_dir / "already-downloaded.mp4"
+    existing_file.write_text("keep", encoding="utf-8")
+
+    result = main(
+        [
+            "download",
+            "--videos-dir",
+            str(tmp_path / "videos"),
+            "--project-dir",
+            str(project_dir),
+            "--bvid",
+            "BV1xx411c7mD",
+            "--dry-run",
+        ]
+    )
+
+    assert result == 0
+    workflow_dir = project_dir / ".workflow"
+    assert (workflow_dir / "bbdown.config").is_file()
+    assert (workflow_dir / "yt-dlp.conf").is_file()
+    assert existing_file.read_text(encoding="utf-8") == "keep"
+    assert not (tmp_path / "videos" / "video0").exists()
+
+    manifest = json.loads((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["project_dir"] == str(project_dir)
+    assert manifest["workflow_dir"] == str(workflow_dir)
+
+
+def test_download_help_includes_project_dir(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["download", "--help"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 0
+    assert "--project-dir" in captured.out
 
 
 def test_download_invalid_bvid_fails_without_creating_project(

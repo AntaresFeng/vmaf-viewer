@@ -60,6 +60,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default="videos",
         type=Path,
     )
+    download.add_argument(
+        "--project-dir",
+        type=Path,
+    )
     download.add_argument("--dry-run", action="store_true")
 
     return parser
@@ -82,7 +86,7 @@ def _download(args: argparse.Namespace, runner) -> int:
         print(f"vmaf-workflow download: {exc}", file=sys.stderr)
         return 2
 
-    project = create_project(settings.videos_dir)
+    project = create_project(settings.videos_dir, project_dir=args.project_dir)
 
     write_text(project.bbdown_config_path, bbdown_config_text(project, settings.bbdown))
     write_text(project.ytdlp_config_path, ytdlp_config_text(project, settings.ytdlp))

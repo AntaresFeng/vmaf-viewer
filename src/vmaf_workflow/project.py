@@ -55,13 +55,16 @@ def next_video_dir(videos_dir: Path) -> Path:
     return videos_dir / f"video{max_index + 1}"
 
 
-def create_project(videos_dir: Path) -> WorkflowProject:
-    videos_dir.mkdir(parents=True, exist_ok=True)
-    video_dir = next_video_dir(videos_dir)
+def create_project(videos_dir: Path, project_dir: Path | None = None) -> WorkflowProject:
+    if project_dir is None:
+        videos_dir.mkdir(parents=True, exist_ok=True)
+        video_dir = next_video_dir(videos_dir)
+    else:
+        video_dir = project_dir
     workflow_dir = video_dir / ".workflow"
     project = WorkflowProject(video_dir=video_dir, workflow_dir=workflow_dir)
 
-    video_dir.mkdir(parents=True, exist_ok=False)
+    video_dir.mkdir(parents=True, exist_ok=project_dir is not None)
     workflow_dir.mkdir(parents=True, exist_ok=True)
     project.ytdlp_infojson_dir.mkdir(parents=True, exist_ok=True)
     return project
@@ -120,9 +123,9 @@ def bbdown_config_text(project: WorkflowProject, settings: BBDownSettings) -> st
 def ytdlp_config_text(project: WorkflowProject, settings: YtDlpSettings) -> str:
     temp_dir = project.video_dir / ".yt-dlp-temp"
     output_template = settings.output_template
-    infojson_template = str(
-        project.ytdlp_infojson_dir
-        / _replace_output_template_ext(output_template, ".info.json")
+    infojson_template = (
+        project.ytdlp_infojson_dir.resolve()
+        / _strip_output_template_ext(output_template)
     )
     return "\n".join(
         (
@@ -132,28 +135,29 @@ def ytdlp_config_text(project: WorkflowProject, settings: YtDlpSettings) -> str:
             "--no-write-thumbnail",
             "--write-info-json",
             "--no-clean-infojson",
-            f"-P home:{project.video_dir}",
-            f"-P temp:{temp_dir}",
+            f"-P home:{project.video_dir.resolve().as_posix()}",
+            f"-P temp:{temp_dir.resolve().as_posix()}",
             f"-o {output_template}",
-            f"-o infojson:{infojson_template}",
+            f"-o infojson:{infojson_template.as_posix()}",
             (
                 "--print-to-file "
-                f"after_video:%()j {project.ytdlp_after_video_jsonl_path}"
+                f"after_video:%()j "
+                f"{project.ytdlp_after_video_jsonl_path.resolve().as_posix()}"
             ),
             "",
         )
     )
 
 
-def _replace_output_template_ext(output_template: str, suffix: str) -> str:
+def _strip_output_template_ext(output_template: str) -> str:
     dotted_ext_token = ".%(ext)s"
     if output_template.endswith(dotted_ext_token):
-        return f"{output_template[: -len(dotted_ext_token)]}{suffix}"
+        return output_template[: -len(dotted_ext_token)]
 
     ext_token = "%(ext)s"
     if output_template.endswith(ext_token):
-        return f"{output_template[: -len(ext_token)]}{suffix}"
-    return f"{output_template}{suffix}"
+        return output_template[: -len(ext_token)]
+    return output_template
 
 
 def write_text(path: Path, text: str) -> None:

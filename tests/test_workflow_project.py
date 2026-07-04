@@ -6,6 +6,7 @@ import pytest
 
 from vmaf_workflow.config import BBDownSettings, YtDlpSettings
 from vmaf_workflow.project import (
+    WorkflowProject,
     bbdown_config_text,
     create_project,
     next_video_dir,
@@ -35,6 +36,24 @@ def test_create_project_creates_video0_workflow_and_infojson_dirs(
     assert project.workflow_dir == project.video_dir / ".workflow"
     assert project.workflow_dir.is_dir()
     assert project.ytdlp_infojson_dir.is_dir()
+
+
+def test_create_project_reuses_explicit_project_dir_without_next_video(
+    tmp_path: Path,
+) -> None:
+    explicit_dir = tmp_path / "reuse-this"
+    explicit_dir.mkdir()
+    marker = explicit_dir / "already-downloaded.mp4"
+    marker.write_text("keep", encoding="utf-8")
+
+    project = create_project(tmp_path / "videos", project_dir=explicit_dir)
+
+    assert project.video_dir == explicit_dir
+    assert project.workflow_dir == explicit_dir / ".workflow"
+    assert project.workflow_dir.is_dir()
+    assert project.ytdlp_infojson_dir.is_dir()
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert not (tmp_path / "videos" / "video0").exists()
 
 
 def test_normalize_bvid_accepts_id_and_bilibili_url() -> None:
@@ -111,13 +130,41 @@ def test_ytdlp_config_text_locks_outputs_to_project(
     assert "--no-write-thumbnail" in text
     assert "--write-info-json" in text
     assert "--no-clean-infojson" in text
-    assert f"-P home:{project.video_dir}" in text
-    assert f"-P temp:{project.video_dir / '.yt-dlp-temp'}" in text
+    assert f"-P home:{project.video_dir.as_posix()}" in text
+    assert f"-P temp:{(project.video_dir / '.yt-dlp-temp').as_posix()}" in text
     assert "%(id)s-%(format_note)s-%(vcodec)s.%(ext)s" in text
-    assert str(project.ytdlp_infojson_dir) in text
-    assert "%(id)s-%(format_note)s-%(vcodec)s.info.json" in text
+    assert project.ytdlp_infojson_dir.as_posix() in text
     assert (
-        f"--print-to-file after_video:%()j {project.ytdlp_after_video_jsonl_path}"
+        f"-o infojson:{project.ytdlp_infojson_dir.as_posix()}/"
+        "%(id)s-%(format_note)s-%(vcodec)s"
+    ) in text
+    assert "%(id)s-%(format_note)s-%(vcodec)s.info.json" not in text
+    assert (
+        "--print-to-file "
+        f"after_video:%()j {project.ytdlp_after_video_jsonl_path.as_posix()}" in text
+    )
+    for line in text.splitlines():
+        if line.startswith(("-P home:", "-P temp:", "-o infojson:", "--print-to-file")):
+            assert "\\" not in line
+
+
+def test_ytdlp_config_text_uses_absolute_paths_for_relative_project() -> None:
+    project = WorkflowProject(
+        video_dir=Path("videos") / "video0",
+        workflow_dir=Path("videos") / "video0" / ".workflow",
+    )
+
+    text = ytdlp_config_text(project, YtDlpSettings())
+
+    assert "-P home:videos/video0" not in text
+    assert f"-P home:{project.video_dir.resolve().as_posix()}" in text
+    assert (
+        f"-o infojson:{project.ytdlp_infojson_dir.resolve().as_posix()}/"
+        "%(id)s-%(format_note)s-%(vcodec)s"
+    ) in text
+    assert (
+        "--print-to-file "
+        f"after_video:%()j {project.ytdlp_after_video_jsonl_path.resolve().as_posix()}"
         in text
     )
 
