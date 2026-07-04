@@ -18,6 +18,7 @@ from vmaf_workflow.bbdown import (
 from vmaf_workflow.config import default_settings
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult, DownloadDecision, Manifest
+from vmaf_workflow.prepare import PrepareError, prepare_project
 from vmaf_workflow.project import (
     WorkflowProject,
     bbdown_config_text,
@@ -43,6 +44,8 @@ def main(argv: Sequence[str] | None = None, runner=None) -> int:
 
     if args.command == "download":
         return _download(args, runner or SubprocessRunner())
+    if args.command == "prepare":
+        return _prepare(args)
 
     parser.error("a command is required")
     return 2
@@ -66,7 +69,28 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     download.add_argument("--dry-run", action="store_true")
 
+    prepare = subparsers.add_parser("prepare")
+    prepare.add_argument("--project-dir", type=Path)
+    prepare.add_argument("--reference", type=Path)
+
     return parser
+
+
+def _prepare(args: argparse.Namespace) -> int:
+    if args.project_dir is None:
+        print("vmaf-workflow prepare: --project-dir is required", file=sys.stderr)
+        return 2
+    if args.reference is None:
+        print("vmaf-workflow prepare: --reference is required", file=sys.stderr)
+        return 2
+
+    project = create_project(args.project_dir.parent, project_dir=args.project_dir)
+    try:
+        prepare_project(project, args.reference)
+    except PrepareError as exc:
+        print(f"vmaf-workflow prepare: {exc}", file=sys.stderr)
+        return 2
+    return 0
 
 
 def _download(args: argparse.Namespace, runner) -> int:

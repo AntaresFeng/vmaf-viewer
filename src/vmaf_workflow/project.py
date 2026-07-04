@@ -42,6 +42,10 @@ class WorkflowProject:
     def manifest_path(self) -> Path:
         return self.workflow_dir / "manifest.json"
 
+    @property
+    def media_inventory_path(self) -> Path:
+        return self.workflow_dir / "media-inventory.json"
+
 
 def next_video_dir(videos_dir: Path) -> Path:
     max_index = -1

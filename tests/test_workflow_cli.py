@@ -101,6 +101,124 @@ def test_download_dry_run_uses_explicit_project_dir_without_next_video(
     assert manifest["workflow_dir"] == str(workflow_dir)
 
 
+def test_prepare_requires_reference(tmp_path: Path, capsys) -> None:
+    project_dir = tmp_path / "video0"
+    project_dir.mkdir()
+
+    result = main(["prepare", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "reference" in captured.err
+    assert not (project_dir / ".workflow" / "media-inventory.json").exists()
+
+
+def test_prepare_records_reference_inside_project_and_excludes_workflow_files(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    temp_dir = project_dir / ".yt-dlp-temp"
+    workflow_dir.mkdir(parents=True)
+    temp_dir.mkdir()
+    reference = project_dir / "reference.mp4"
+    distorted = project_dir / "distorted.webm"
+    ignored_workflow = workflow_dir / "cached.mp4"
+    ignored_temp = temp_dir / "partial.mkv"
+    reference.write_bytes(b"reference")
+    distorted.write_bytes(b"distorted")
+    ignored_workflow.write_bytes(b"ignore")
+    ignored_temp.write_bytes(b"ignore")
+
+    result = main(
+        [
+            "prepare",
+            "--project-dir",
+            str(project_dir),
+            "--reference",
+            str(reference),
+        ]
+    )
+
+    assert result == 0
+    inventory_path = workflow_dir / "media-inventory.json"
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    files = {entry["path"]: entry for entry in inventory["files"]}
+    assert sorted(files) == ["distorted.webm", "reference.mp4"]
+    assert files["reference.mp4"]["role"] == "reference"
+    assert files["reference.mp4"]["size_bytes"] == len(b"reference")
+    assert files["reference.mp4"]["suffix"] == ".mp4"
+    assert files["distorted.webm"]["role"] == "distorted"
+    assert inventory["reference"] == "reference.mp4"
+
+    manifest = json.loads((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["reference"] == {"path": "reference.mp4"}
+    assert manifest["media_inventory"] == str(inventory_path)
+
+
+def test_prepare_copies_external_reference_and_preserves_manifest(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    external_reference = tmp_path / "source-reference.mov"
+    external_reference.write_bytes(b"external-ref")
+    (project_dir / "encode.mkv").write_bytes(b"distorted")
+    (workflow_dir / "manifest.json").write_text(
+        json.dumps({"bilibili": {"bvid": "BV1xx411c7mD"}}),
+        encoding="utf-8",
+    )
+
+    result = main(
+        [
+            "prepare",
+            "--project-dir",
+            str(project_dir),
+            "--reference",
+            str(external_reference),
+        ]
+    )
+
+    assert result == 0
+    copied_reference = project_dir / "source-reference.mov"
+    assert copied_reference.read_bytes() == b"external-ref"
+
+    inventory = json.loads(
+        (workflow_dir / "media-inventory.json").read_text(encoding="utf-8")
+    )
+    files = {entry["path"]: entry for entry in inventory["files"]}
+    assert files["source-reference.mov"]["role"] == "reference"
+    assert files["encode.mkv"]["role"] == "distorted"
+
+    manifest = json.loads((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["bilibili"] == {"bvid": "BV1xx411c7mD"}
+    assert manifest["reference"] == {"path": "source-reference.mov"}
+    assert manifest["media_inventory"] == str(workflow_dir / "media-inventory.json")
+
+
+def test_prepare_missing_reference_path_errors_without_inventory(
+    tmp_path: Path, capsys
+) -> None:
+    project_dir = tmp_path / "video0"
+    project_dir.mkdir()
+
+    result = main(
+        [
+            "prepare",
+            "--project-dir",
+            str(project_dir),
+            "--reference",
+            str(tmp_path / "missing.mp4"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "reference" in captured.err
+    assert not (project_dir / ".workflow" / "media-inventory.json").exists()
+
+
 def test_download_help_includes_project_dir(capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["download", "--help"])
