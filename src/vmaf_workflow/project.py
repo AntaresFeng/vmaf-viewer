@@ -46,6 +46,14 @@ class WorkflowProject:
     def media_inventory_path(self) -> Path:
         return self.workflow_dir / "media-inventory.json"
 
+    @property
+    def package_manifest_path(self) -> Path:
+        return self.workflow_dir / "package-manifest.json"
+
+    @property
+    def default_package_path(self) -> Path:
+        return self.workflow_dir / f"{self.video_dir.name}-inputs.tar"
+
 
 def next_video_dir(videos_dir: Path) -> Path:
     max_index = -1
@@ -59,7 +67,9 @@ def next_video_dir(videos_dir: Path) -> Path:
     return videos_dir / f"video{max_index + 1}"
 
 
-def create_project(videos_dir: Path, project_dir: Path | None = None) -> WorkflowProject:
+def create_project(
+    videos_dir: Path, project_dir: Path | None = None
+) -> WorkflowProject:
     if project_dir is None:
         videos_dir.mkdir(parents=True, exist_ok=True)
         video_dir = next_video_dir(videos_dir)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -217,6 +218,159 @@ def test_prepare_missing_reference_path_errors_without_inventory(
     assert result == 2
     assert "reference" in captured.err
     assert not (project_dir / ".workflow" / "media-inventory.json").exists()
+
+
+def test_package_creates_tar_from_inventory_and_records_manifest(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    nested_dir = project_dir / "nested"
+    nested_dir.mkdir(parents=True)
+    workflow_dir.mkdir()
+    (project_dir / "reference.mp4").write_bytes(b"reference")
+    (nested_dir / "encode.webm").write_bytes(b"distorted")
+    (project_dir / "unlisted.mp4").write_bytes(b"do-not-package")
+    (workflow_dir / "media-inventory.json").write_text(
+        json.dumps(
+            {
+                "reference": "reference.mp4",
+                "files": [
+                    {
+                        "path": "reference.mp4",
+                        "role": "reference",
+                        "size_bytes": len(b"reference"),
+                        "suffix": ".mp4",
+                    },
+                    {
+                        "path": "nested/encode.webm",
+                        "role": "distorted",
+                        "size_bytes": len(b"distorted"),
+                        "suffix": ".webm",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "manifest.json").write_text(
+        json.dumps({"reference": {"path": "reference.mp4"}}),
+        encoding="utf-8",
+    )
+
+    result = main(["package", "--project-dir", str(project_dir)])
+
+    assert result == 0
+    package_path = workflow_dir / "video0-inputs.tar"
+    package_manifest_path = workflow_dir / "package-manifest.json"
+    assert package_path.is_file()
+    assert package_manifest_path.is_file()
+
+    with tarfile.open(package_path, "r") as archive:
+        names = sorted(archive.getnames())
+    assert names == sorted(
+        [
+            "video0/.workflow/manifest.json",
+            "video0/.workflow/media-inventory.json",
+            "video0/.workflow/package-manifest.json",
+            "video0/nested/encode.webm",
+            "video0/reference.mp4",
+        ]
+    )
+
+    package_manifest = json.loads(package_manifest_path.read_text(encoding="utf-8"))
+    assert package_manifest["archive_path"] == str(package_path)
+    assert package_manifest["archive_root"] == "video0"
+    assert [entry["path"] for entry in package_manifest["media_files"]] == [
+        "reference.mp4",
+        "nested/encode.webm",
+    ]
+
+    manifest = json.loads((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["package"] == {
+        "path": str(package_path),
+        "manifest": str(package_manifest_path),
+    }
+
+
+def test_package_supports_explicit_output_path(tmp_path: Path) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    (project_dir / "reference.mp4").write_bytes(b"reference")
+    (workflow_dir / "media-inventory.json").write_text(
+        json.dumps(
+            {
+                "reference": "reference.mp4",
+                "files": [
+                    {
+                        "path": "reference.mp4",
+                        "role": "reference",
+                        "size_bytes": len(b"reference"),
+                        "suffix": ".mp4",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "upload" / "custom.tar"
+
+    result = main(
+        [
+            "package",
+            "--project-dir",
+            str(project_dir),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    assert result == 0
+    assert output_path.is_file()
+
+
+def test_package_requires_media_inventory(tmp_path: Path, capsys) -> None:
+    project_dir = tmp_path / "video0"
+    project_dir.mkdir()
+
+    result = main(["package", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "media-inventory" in captured.err
+    assert not (project_dir / ".workflow" / "video0-inputs.tar").exists()
+
+
+def test_package_rejects_inventory_paths_outside_project(
+    tmp_path: Path, capsys
+) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "media-inventory.json").write_text(
+        json.dumps(
+            {
+                "reference": "../escape.mp4",
+                "files": [
+                    {
+                        "path": "../escape.mp4",
+                        "role": "reference",
+                        "size_bytes": 1,
+                        "suffix": ".mp4",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = main(["package", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "outside project" in captured.err
+    assert not (workflow_dir / "video0-inputs.tar").exists()
 
 
 def test_download_help_includes_project_dir(capsys) -> None:

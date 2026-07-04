@@ -18,6 +18,7 @@ from vmaf_workflow.bbdown import (
 from vmaf_workflow.config import default_settings
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult, DownloadDecision, Manifest
+from vmaf_workflow.packager import PackageError, package_project
 from vmaf_workflow.prepare import PrepareError, prepare_project
 from vmaf_workflow.project import (
     WorkflowProject,
@@ -46,6 +47,8 @@ def main(argv: Sequence[str] | None = None, runner=None) -> int:
         return _download(args, runner or SubprocessRunner())
     if args.command == "prepare":
         return _prepare(args)
+    if args.command == "package":
+        return _package(args)
 
     parser.error("a command is required")
     return 2
@@ -73,7 +76,28 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--project-dir", type=Path)
     prepare.add_argument("--reference", type=Path)
 
+    package = subparsers.add_parser("package")
+    package.add_argument("--project-dir", type=Path)
+    package.add_argument("--output", type=Path)
+
     return parser
+
+
+def _package(args: argparse.Namespace) -> int:
+    if args.project_dir is None:
+        print("vmaf-workflow package: --project-dir is required", file=sys.stderr)
+        return 2
+
+    project = WorkflowProject(
+        video_dir=args.project_dir,
+        workflow_dir=args.project_dir / ".workflow",
+    )
+    try:
+        package_project(project, args.output)
+    except PackageError as exc:
+        print(f"vmaf-workflow package: {exc}", file=sys.stderr)
+        return 2
+    return 0
 
 
 def _prepare(args: argparse.Namespace) -> int:
