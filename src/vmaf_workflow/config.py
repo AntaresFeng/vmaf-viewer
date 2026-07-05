@@ -66,10 +66,41 @@ class YtDlpSettings:
 
 
 @dataclass(frozen=True)
+class EasyVmafSettings:
+    repo_dir: Path = Path("/home/fzx/easyVmaf")
+    model_4k_min_height: int = 1600
+    output_fmt: str = "json"
+    endsync: bool = True
+    threads: int | None = None
+
+    def executable_path(self) -> Path:
+        if self._is_windows_repo_dir():
+            return self.repo_dir / ".venv" / "Scripts" / "easyvmaf.exe"
+        return self.repo_dir / ".venv" / "bin" / "easyvmaf"
+
+    def with_repo_dir(self, repo_dir: Path) -> "EasyVmafSettings":
+        return EasyVmafSettings(
+            repo_dir=repo_dir,
+            model_4k_min_height=self.model_4k_min_height,
+            output_fmt=self.output_fmt,
+            endsync=self.endsync,
+            threads=self.threads,
+        )
+
+    def _is_windows_repo_dir(self) -> bool:
+        raw_path = str(self.repo_dir)
+        posix_path = self.repo_dir.as_posix()
+        if posix_path.startswith("/") and ":" not in posix_path:
+            return False
+        return ":" in raw_path or "\\" in raw_path
+
+
+@dataclass(frozen=True)
 class WorkflowSettings:
     videos_dir: Path = Path("videos")
     bbdown: BBDownSettings = field(default_factory=BBDownSettings)
     ytdlp: YtDlpSettings = field(default_factory=YtDlpSettings)
+    easyvmaf: EasyVmafSettings = field(default_factory=EasyVmafSettings)
 
 
 def default_settings() -> WorkflowSettings:

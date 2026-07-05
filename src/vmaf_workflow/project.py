@@ -54,6 +54,14 @@ class WorkflowProject:
     def default_package_path(self) -> Path:
         return self.workflow_dir / f"{self.video_dir.name}-inputs.tar"
 
+    @property
+    def remote_plan_path(self) -> Path:
+        return self.workflow_dir / "remote-plan.json"
+
+    @property
+    def remote_plan_script_path(self) -> Path:
+        return self.workflow_dir / "remote-plan.sh"
+
 
 def next_video_dir(videos_dir: Path) -> Path:
     max_index = -1

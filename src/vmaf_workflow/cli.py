@@ -20,6 +20,7 @@ from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult, DownloadDecision, Manifest
 from vmaf_workflow.packager import PackageError, package_project
 from vmaf_workflow.prepare import PrepareError, prepare_project
+from vmaf_workflow.remote_plan import RemotePlanError, write_remote_plan
 from vmaf_workflow.project import (
     WorkflowProject,
     bbdown_config_text,
@@ -49,6 +50,8 @@ def main(argv: Sequence[str] | None = None, runner=None) -> int:
         return _prepare(args)
     if args.command == "package":
         return _package(args)
+    if args.command == "remote-plan":
+        return _remote_plan(args)
 
     parser.error("a command is required")
     return 2
@@ -80,7 +83,33 @@ def _build_parser() -> argparse.ArgumentParser:
     package.add_argument("--project-dir", type=Path)
     package.add_argument("--output", type=Path)
 
+    remote_plan = subparsers.add_parser("remote-plan")
+    remote_plan.add_argument("--project-dir", type=Path)
+    remote_plan.add_argument("--easyvmaf-repo", type=Path)
+
     return parser
+
+
+def _remote_plan(args: argparse.Namespace) -> int:
+    if args.project_dir is None:
+        print("vmaf-workflow remote-plan: --project-dir is required", file=sys.stderr)
+        return 2
+
+    project = WorkflowProject(
+        video_dir=args.project_dir,
+        workflow_dir=args.project_dir / ".workflow",
+    )
+    settings = default_settings().easyvmaf
+    if args.easyvmaf_repo is not None:
+        settings = settings.with_repo_dir(args.easyvmaf_repo)
+    try:
+        plan = write_remote_plan(project, settings)
+    except RemotePlanError as exc:
+        print(f"vmaf-workflow remote-plan: {exc}", file=sys.stderr)
+        return 2
+    for warning in plan.get("warnings", []):
+        print(f"warning: {warning}", file=sys.stderr)
+    return 0
 
 
 def _package(args: argparse.Namespace) -> int:

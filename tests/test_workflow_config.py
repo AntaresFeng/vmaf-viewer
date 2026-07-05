@@ -38,7 +38,23 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
     assert settings.ytdlp.output_template == (
         "%(id)s-%(format_note)s-%(vcodec)s.%(ext)s"
     )
+    assert settings.easyvmaf.repo_dir == Path("/home/fzx/easyVmaf")
+    assert settings.easyvmaf.model_4k_min_height == 1600
+    assert settings.easyvmaf.output_fmt == "json"
+    assert settings.easyvmaf.endsync is True
+    assert settings.easyvmaf.threads is None
     assert YTDLP_FORMAT_SELECTOR == "all[height>=1080][vcodec!=none][acodec=none]"
+
+
+def test_easyvmaf_settings_infers_remote_executable_from_repo_shape():
+    settings = default_settings().easyvmaf
+
+    assert settings.executable_path().as_posix() == (
+        "/home/fzx/easyVmaf/.venv/bin/easyvmaf"
+    )
+    assert settings.with_repo_dir(Path(r"C:\easyVmaf")).executable_path() == (
+        Path(r"C:\easyVmaf\.venv\Scripts\easyvmaf.exe")
+    )
 
 
 def test_quality_labels_use_exact_order_and_define_1080_fallback():
