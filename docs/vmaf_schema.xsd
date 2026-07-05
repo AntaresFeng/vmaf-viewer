@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+  <xs:annotation>
+    <xs:documentation>
+      XML Schema for libvmaf XML log output (log_fmt=xml).
+      Top-level structure is stable; metric attributes inside &lt;frame&gt;
+      vary by model/feature configuration. See docs/vmaf_schema.json for
+      the JSON counterpart and known metric names.
+    </xs:documentation>
+  </xs:annotation>
+
+  <!-- Root element -->
+  <xs:element name="VMAF" type="VmafType"/>
+
+  <xs:complexType name="VmafType">
+    <xs:sequence>
+      <xs:element name="params" type="ParamsType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="fyi"      type="FyiType"  minOccurs="0" maxOccurs="1"/>
+      <xs:element name="frames"   type="FramesType"               maxOccurs="1"/>
+      <xs:element name="pooled_metrics" type="PooledMetricsType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="aggregate_metrics" type="AggregateMetricsType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+    <xs:attribute name="version" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Params: quality dimensions -->
+  <xs:complexType name="ParamsType">
+    <xs:attribute name="qualityWidth"  type="xs:positiveInteger" use="optional"/>
+    <xs:attribute name="qualityHeight" type="xs:positiveInteger" use="optional"/>
+  </xs:complexType>
+
+  <!-- FYI: computation metadata -->
+  <xs:complexType name="FyiType">
+    <xs:attribute name="fps" type="xs:decimal" use="required"/>
+  </xs:complexType>
+
+  <!-- Frames container -->
+  <xs:complexType name="FramesType">
+    <xs:sequence>
+      <xs:element name="frame" type="FrameType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Single frame: all metrics are attributes on the frame element -->
+  <xs:complexType name="FrameType">
+    <xs:attribute name="frameNum" type="xs:nonNegativeInteger" use="required"/>
+
+    <!-- VMAF score variants -->
+    <xs:attribute name="vmaf"            type="xs:decimal"/>
+    <xs:attribute name="vmaf_hd"         type="xs:decimal"/>
+    <xs:attribute name="vmaf_hd_neg"     type="xs:decimal"/>
+    <xs:attribute name="vmaf_hd_phone"   type="xs:decimal"/>
+    <xs:attribute name="vmaf_4k"         type="xs:decimal"/>
+
+    <!-- ADM metrics -->
+    <xs:attribute name="integer_adm2"          type="xs:decimal"/>
+    <xs:attribute name="integer_adm2_egl_1"    type="xs:decimal"/>
+    <xs:attribute name="integer_adm3"          type="xs:decimal"/>
+    <xs:attribute name="integer_adm3_egl_1"    type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale0"    type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale0_egl_1" type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale1"    type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale1_egl_1" type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale2"    type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale2_egl_1" type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale3"    type="xs:decimal"/>
+    <xs:attribute name="integer_adm_scale3_egl_1" type="xs:decimal"/>
+
+    <!-- AIM metrics -->
+    <xs:attribute name="integer_aim"       type="xs:decimal"/>
+    <xs:attribute name="integer_aim_egl_1" type="xs:decimal"/>
+
+    <!-- VIF metrics -->
+    <xs:attribute name="integer_vif_scale0"      type="xs:decimal"/>
+    <xs:attribute name="integer_vif_scale0_egl_1" type="xs:decimal"/>
+    <xs:attribute name="integer_vif_scale1"      type="xs:decimal"/>
+    <xs:attribute name="integer_vif_scale1_egl_1" type="xs:decimal"/>
+    <xs:attribute name="integer_vif_scale2"      type="xs:decimal"/>
+    <xs:attribute name="integer_vif_scale2_egl_1" type="xs:decimal"/>
+    <xs:attribute name="integer_vif_scale3"      type="xs:decimal"/>
+    <xs:attribute name="integer_vif_scale3_egl_1" type="xs:decimal"/>
+
+    <!-- Motion metrics -->
+    <xs:attribute name="integer_motion"  type="xs:decimal"/>
+    <xs:attribute name="integer_motion2" type="xs:decimal"/>
+    <xs:attribute name="integer_motion3" type="xs:decimal"/>
+
+    <!-- PSNR metrics -->
+    <xs:attribute name="psnr_y"  type="xs:decimal"/>
+    <xs:attribute name="psnr_cb" type="xs:decimal"/>
+    <xs:attribute name="psnr_cr" type="xs:decimal"/>
+
+    <!-- SSIM metrics -->
+    <xs:attribute name="float_ssim"    type="xs:decimal"/>
+    <xs:attribute name="float_ms_ssim" type="xs:decimal"/>
+
+    <!-- CAMBI metric -->
+    <xs:attribute name="cambi" type="xs:decimal"/>
+
+    <!-- Allow additional metric attributes via anyAttribute -->
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- Pooled metrics: per-metric aggregate statistics -->
+  <xs:complexType name="PooledMetricsType">
+    <xs:sequence>
+      <xs:element name="metric" type="MetricStatType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="MetricStatType">
+    <xs:attribute name="name"            type="xs:string"  use="required"/>
+    <xs:attribute name="min"             type="xs:decimal" use="required"/>
+    <xs:attribute name="max"             type="xs:decimal" use="required"/>
+    <xs:attribute name="mean"            type="xs:decimal" use="required"/>
+    <xs:attribute name="harmonic_mean"   type="xs:decimal" use="required"/>
+  </xs:complexType>
+
+  <!-- Aggregate metrics: reserved by libvmaf, usually empty -->
+  <xs:complexType name="AggregateMetricsType">
+    <xs:sequence/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+</xs:schema>

@@ -1,8 +1,8 @@
 # VMAF Compare
 
-VMAF Compare is a local toolkit for inspecting and ranking libvmaf JSON output from multiple video encodes. It is built for the common workflow where you already generated one `*_vmaf.json` file per distorted encode and want to compare those degraded videos against each other, not only inspect where a single encode differs from the reference.
+VMAF Compare is a local toolkit for inspecting and ranking libvmaf JSON, CSV, or XML output from multiple video encodes. It is built for the common workflow where you already generated one VMAF log file per distorted encode and want to compare those degraded videos against each other, not only inspect where a single encode differs from the reference.
 
-The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend. It scans a directory of `*_vmaf.json` files, parses frame-level metrics, compares selected files over their shortest common frame range, and ranks them by mean VMAF by default.
+The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend. It scans a directory of `*.json`, `*.csv`, and `*.xml` files, parses frame-level metrics, compares selected files over their shortest common frame range, and ranks them by mean VMAF by default.
 
 ## Screenshots
 
@@ -14,8 +14,8 @@ The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend.
 
 ## Features
 
-- Scan local directories for libvmaf JSON logs.
-- Compare 4-6 large VMAF JSON files without loading unnecessary detailed series up front.
+- Scan local directories for libvmaf JSON, CSV, or XML logs.
+- Compare 4-6 large VMAF log files without loading unnecessary detailed series up front.
 - Rank encodes by summary statistics such as mean VMAF and threshold counts.
 - Plot per-frame VMAF, local zoom/detail metrics, histograms, CDFs, and boxplots in a browser UI.
 - Switch the scan directory from the command line, environment variable, or the viewer's top `Dir` field.
@@ -25,7 +25,7 @@ The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend.
 
 - Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/) for Python environment management
-- [`ffmpeg`](https://ffmpeg.org/) with libvmaf support if you generate VMAF JSON locally
+- [`ffmpeg`](https://ffmpeg.org/) with libvmaf support if you generate VMAF logs locally
 
 Check libvmaf support with:
 
@@ -72,14 +72,14 @@ videos/
 Run the viewer with a specific scan directory:
 
 ```bash
-uv run vmaf-viewer /path/to/vmaf-jsons
-uv run vmaf-viewer --data-dir /path/to/vmaf-jsons
+uv run vmaf-viewer /path/to/vmaf-logs
+uv run vmaf-viewer --data-dir /path/to/vmaf-logs
 ```
 
 Or set the environment variable first:
 
 ```bash
-$env:VMAF_VIEWER_DATA_DIR = "/path/to/vmaf-jsons"
+$env:VMAF_VIEWER_DATA_DIR = "/path/to/vmaf-logs"
 uv run vmaf-viewer
 ```
 

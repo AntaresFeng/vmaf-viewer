@@ -13,6 +13,7 @@ from pathlib import Path
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _human_size(path: Path) -> str:
     """Return file size as a human-readable string (like `du -h`)."""
     size = os.path.getsize(path)
@@ -33,16 +34,18 @@ def _check_tool(name: str) -> None:
 def _ffprobe_json(video: Path, entries: str) -> dict:
     """Run ffprobe and return parsed JSON."""
     cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", entries,
-        "-of", "json",
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        entries,
+        "-of",
+        "json",
         str(video),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise SystemExit(
-            f"ERROR: ffprobe failed on {video}\n{result.stderr.strip()}"
-        )
+        raise SystemExit(f"ERROR: ffprobe failed on {video}\n{result.stderr.strip()}")
     return json.loads(result.stdout)
 
 
@@ -50,9 +53,12 @@ def _ffprobe_json(video: Path, entries: str) -> dict:
 # stream probing
 # ---------------------------------------------------------------------------
 
+
 def probe_stream(video: Path) -> dict:
     """Return stream metadata dict or raise on missing video stream."""
-    data = _ffprobe_json(video, "stream=time_base,r_frame_rate,avg_frame_rate,nb_frames")
+    data = _ffprobe_json(
+        video, "stream=time_base,r_frame_rate,avg_frame_rate,nb_frames"
+    )
     streams = data.get("streams", [])
     if not streams:
         raise ValueError("no video stream found")
@@ -75,6 +81,7 @@ def parse_framerate(fr_str: str) -> tuple[int, int]:
 # interval / mode logic
 # ---------------------------------------------------------------------------
 
+
 def is_constant_interval(tbn: int, fps_num: int, fps_den: int) -> bool:
     """Return True when each frame occupies an integer number of time_base ticks."""
     return (tbn * fps_den) % fps_num == 0
@@ -94,16 +101,22 @@ def compute_fast_pts(frame_index: int, tbn: int, fps_num: int, fps_den: int) -> 
 # precise PTS lookup
 # ---------------------------------------------------------------------------
 
+
 def find_precise_pts(video: Path, frame_index: int) -> tuple[int, float]:
     """Return (pts, pts_time) of the Nth display-order frame (0-indexed).
 
     Probes every packet, sorts by PTS, and picks the requested index.
     """
     cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "packet=pts,pts_time",
-        "-of", "csv=p=0",
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "packet=pts,pts_time",
+        "-of",
+        "csv=p=0",
         str(video),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -122,7 +135,9 @@ def find_precise_pts(video: Path, frame_index: int) -> tuple[int, float]:
         pts_str, pts_time_str = parts[0], parts[1]
         if pts_str == "N/A":
             continue
-        packets.append((int(pts_str), float(pts_time_str) if pts_time_str != "N/A" else 0.0))
+        packets.append(
+            (int(pts_str), float(pts_time_str) if pts_time_str != "N/A" else 0.0)
+        )
 
     # Sort by PTS ascending (display order)
     packets.sort(key=lambda p: p[0])
@@ -139,16 +154,24 @@ def find_precise_pts(video: Path, frame_index: int) -> tuple[int, float]:
 # frame extraction
 # ---------------------------------------------------------------------------
 
+
 def extract_frame(video: Path, pts: int, output: Path) -> None:
     """Use ffmpeg to select and write the frame at *pts* as a PNG."""
     # The select filter expects the escaped comma: eq(pts\,<value>)
     select_expr = f"eq(pts\\,{pts})"
     cmd = [
-        "ffmpeg", "-y", "-v", "error",
-        "-i", str(video),
-        "-vf", f"select={select_expr}",
-        "-vframes", "1",
-        "-update", "1",
+        "ffmpeg",
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        str(video),
+        "-vf",
+        f"select={select_expr}",
+        "-vframes",
+        "1",
+        "-update",
+        "1",
         str(output),
     ]
     subprocess.run(cmd, capture_output=True)
@@ -159,6 +182,7 @@ def extract_frame(video: Path, pts: int, output: Path) -> None:
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
+
 
 def _setup_console() -> None:
     """Ensure stdout/stderr use UTF-8 so Unicode symbols print correctly.
@@ -182,27 +206,40 @@ def main() -> None:
         description="Extract the Nth display-order frame from video(s) as PNG.",
     )
     parser.add_argument(
-        "-n", dest="frame_index", type=int, required=True,
+        "-n",
+        dest="frame_index",
+        type=int,
+        required=True,
         help="Frame index (0-based, in display order).",
     )
     parser.add_argument(
-        "-o", dest="output_dir", type=str, default=None,
+        "-o",
+        dest="output_dir",
+        type=str,
+        default=None,
         help="Output directory.  Default: same directory as the first video.",
     )
     parser.add_argument(
-        "-m", dest="mode", type=str, default="auto",
+        "-m",
+        dest="mode",
+        type=str,
+        default="auto",
         choices=["auto", "fast", "precise"],
         help="Extraction mode: auto (default), fast, or precise.",
     )
     parser.add_argument(
-        "videos", nargs="+",
+        "videos",
+        nargs="+",
         help="One or more video files.",
     )
 
     args = parser.parse_args()
 
     if args.frame_index < 0:
-        print(f"ERROR: Frame index must be a non-negative integer, got: '{args.frame_index}'", file=sys.stderr)
+        print(
+            f"ERROR: Frame index must be a non-negative integer, got: '{args.frame_index}'",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Verify tools are available
@@ -210,7 +247,11 @@ def main() -> None:
     _check_tool("ffmpeg")
 
     # Output directory: default to first video's directory
-    output_dir = Path(args.output_dir) if args.output_dir else Path(args.videos[0]).resolve().parent
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path(args.videos[0]).resolve().parent
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     total = len(args.videos)
@@ -222,7 +263,7 @@ def main() -> None:
         print(f"─── {video} ───")
 
         if not video.is_file():
-            print(f"  WARNING: file not found, skipping", file=sys.stderr)
+            print("  WARNING: file not found, skipping", file=sys.stderr)
             continue
 
         # ── Probe stream ──
@@ -237,7 +278,9 @@ def main() -> None:
         fps_num, fps_den = parse_framerate(stream["r_frame_rate"])
         nb_frames = stream.get("nb_frames", None)
 
-        print(f"  time_base: 1/{tbn}   r_frame_rate: {fps_num}/{fps_den}   nb_frames: {nb_frames}")
+        print(
+            f"  time_base: 1/{tbn}   r_frame_rate: {fps_num}/{fps_den}   nb_frames: {nb_frames}"
+        )
 
         # ── Determine effective mode ──
         constant = is_constant_interval(tbn, fps_num, fps_den)
@@ -280,7 +323,9 @@ def main() -> None:
             pts = compute_fast_pts(args.frame_index, tbn, fps_num, fps_den)
             print(f"  frame_interval: {interval} ticks   PTS: {pts}")
         else:
-            print("  PTS-sorting all packets (this may take a while for large files)...")
+            print(
+                "  PTS-sorting all packets (this may take a while for large files)..."
+            )
             try:
                 pts, pts_time = find_precise_pts(video, args.frame_index)
             except ValueError as exc:
@@ -299,7 +344,7 @@ def main() -> None:
             print(f"  ✓  {size}")
             done += 1
         else:
-            print(f"  ✗  extraction failed")
+            print("  ✗  extraction failed")
             failed += 1
         print()
 

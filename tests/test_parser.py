@@ -3,7 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from vmaf_viewer.parser import VmafParseError, parse_vmaf_file, select_primary_metric
+from vmaf_viewer.models import FileRecord
+from vmaf_viewer.parser import (
+    CsvVmafParser,
+    JsonVmafParser,
+    VmafParseError,
+    VmafParserFactory,
+    XmlVmafParser,
+    parse_vmaf_file,
+    select_primary_metric,
+)
 from vmaf_viewer.scanner import scan_vmaf_files
 
 
@@ -13,6 +22,30 @@ def _record(name: str):
         for record in scan_vmaf_files(Path("tests/fixtures"))
         if record.name == name
     )
+
+
+def _record_for_path(path: Path) -> FileRecord:
+    st = path.stat()
+    return FileRecord(
+        id=path.stem,
+        name=path.name,
+        path=path,
+        relative_path=path.name,
+        size=st.st_size,
+        mtime=st.st_mtime,
+    )
+
+
+def test_parser_factory_selects_strategy_by_suffix():
+    factory = VmafParserFactory()
+
+    assert isinstance(factory.for_suffix(".json"), JsonVmafParser)
+    assert isinstance(factory.for_suffix(".csv"), CsvVmafParser)
+    assert isinstance(factory.for_suffix(".xml"), XmlVmafParser)
+    assert isinstance(factory.for_suffix(".JSON"), JsonVmafParser)
+
+    with pytest.raises(VmafParseError, match="Unsupported VMAF log format"):
+        factory.for_suffix(".sub")
 
 
 def test_select_primary_metric_prefers_vmaf():
@@ -137,3 +170,191 @@ def test_parse_vmaf_file_treats_boolean_metrics_as_non_numeric(tmp_path):
     assert math.isnan(parsed.metrics["vmaf"][0])
     assert parsed.metrics["integer_motion"] == [2.0]
     assert parsed.metrics["float_metric"] == [3.5]
+
+
+def test_parse_vmaf_file_extracts_csv_frames_metrics_and_primary_metric(tmp_path):
+    fixture = tmp_path / "alpha_vmaf.csv"
+    fixture.write_text(
+        "frameNum,vmaf,integer_motion\n0,97.0,1.0\n1,96.0,1.5\n2,90.0,2.0\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert parsed.frame_numbers == [0, 1, 2]
+    assert parsed.primary_metric == "vmaf"
+    assert parsed.metrics["vmaf"] == [97.0, 96.0, 90.0]
+    assert parsed.metrics["integer_motion"] == [1.0, 1.5, 2.0]
+
+
+def test_parse_vmaf_file_treats_bad_csv_metric_cells_as_non_numeric(tmp_path):
+    fixture = tmp_path / "mixed_vmaf.csv"
+    fixture.write_text(
+        "frameNum,vmaf,integer_motion\n0,,1.0\n1,bad,2.0\n2,90.0,\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert math.isnan(parsed.metrics["vmaf"][0])
+    assert math.isnan(parsed.metrics["vmaf"][1])
+    assert parsed.metrics["vmaf"][2] == 90.0
+    assert parsed.metrics["integer_motion"][0] == 1.0
+    assert parsed.metrics["integer_motion"][1] == 2.0
+    assert math.isnan(parsed.metrics["integer_motion"][2])
+
+
+def test_parse_vmaf_file_rejects_csv_missing_frame_num_column(tmp_path):
+    fixture = tmp_path / "bad_vmaf.csv"
+    fixture.write_text("vmaf\n99.0\n", encoding="utf-8")
+
+    with pytest.raises(VmafParseError, match="missing frameNum column"):
+        parse_vmaf_file(_record_for_path(fixture))
+
+
+def test_parse_vmaf_file_rejects_non_utf8_csv_as_invalid_csv(tmp_path):
+    fixture = tmp_path / "bad_vmaf.csv"
+    fixture.write_bytes(b"frameNum,vmaf\n0,\xff\n")
+
+    with pytest.raises(VmafParseError, match="Invalid CSV"):
+        parse_vmaf_file(_record_for_path(fixture))
+
+
+def test_parse_vmaf_file_uses_row_index_for_blank_csv_frame_num(tmp_path):
+    fixture = tmp_path / "blank_frame_num_vmaf.csv"
+    fixture.write_text(
+        "frameNum,vmaf\n,97.0\n,96.0\n5,95.0\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert parsed.frame_numbers == [0, 1, 5]
+    assert parsed.metrics["vmaf"] == [97.0, 96.0, 95.0]
+
+
+def test_parse_vmaf_file_extracts_xml_frames_metrics_and_primary_metric(tmp_path):
+    fixture = tmp_path / "alpha_vmaf.xml"
+    fixture.write_text(
+        """
+        <VMAF version="fixture">
+          <frames>
+            <frame frameNum="0" vmaf="97.0" integer_motion="1.0"/>
+            <frame frameNum="1" vmaf="96.0" integer_motion="1.5"/>
+            <frame frameNum="2" vmaf="90.0" integer_motion="2.0"/>
+          </frames>
+        </VMAF>
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert parsed.frame_numbers == [0, 1, 2]
+    assert parsed.primary_metric == "vmaf"
+    assert parsed.metrics["vmaf"] == [97.0, 96.0, 90.0]
+    assert parsed.metrics["integer_motion"] == [1.0, 1.5, 2.0]
+
+
+def test_parse_vmaf_file_uses_row_index_for_missing_xml_frame_num(tmp_path):
+    fixture = tmp_path / "missing_frame_num_vmaf.xml"
+    fixture.write_text(
+        """
+        <VMAF version="fixture">
+          <frames>
+            <frame vmaf="97.0"/>
+            <frame vmaf="96.0"/>
+          </frames>
+        </VMAF>
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert parsed.frame_numbers == [0, 1]
+    assert parsed.metrics["vmaf"] == [97.0, 96.0]
+
+
+def test_parse_vmaf_file_prefers_direct_xml_frames_container(tmp_path):
+    fixture = tmp_path / "nested_frames_vmaf.xml"
+    fixture.write_text(
+        """
+        <VMAF version="fixture">
+          <metadata>
+            <frames>
+              <frame frameNum="99" vmaf="1.0"/>
+            </frames>
+          </metadata>
+          <frames>
+            <frame frameNum="0" vmaf="97.0"/>
+          </frames>
+        </VMAF>
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert parsed.frame_numbers == [0]
+    assert parsed.metrics["vmaf"] == [97.0]
+
+
+def test_parse_vmaf_file_accepts_empty_xml_frames_container(tmp_path):
+    fixture = tmp_path / "empty_vmaf.xml"
+    fixture.write_text(
+        """
+        <VMAF version="fixture">
+          <frames/>
+        </VMAF>
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert parsed.total_frames == 0
+    assert parsed.metrics == {}
+    assert parsed.primary_metric is None
+
+
+def test_parse_vmaf_file_accepts_namespaced_xml_by_local_name(tmp_path):
+    fixture = tmp_path / "namespaced_vmaf.xml"
+    fixture.write_text(
+        """
+        <v:VMAF xmlns:v="urn:vmaf" version="fixture">
+          <v:frames>
+            <v:frame frameNum="0" vmaf="91.0"/>
+          </v:frames>
+        </v:VMAF>
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = parse_vmaf_file(_record_for_path(fixture))
+
+    assert parsed.frame_numbers == [0]
+    assert parsed.metrics["vmaf"] == [91.0]
+
+
+def test_parse_vmaf_file_rejects_invalid_xml(tmp_path):
+    fixture = tmp_path / "bad_vmaf.xml"
+    fixture.write_text("<VMAF><frames>", encoding="utf-8")
+
+    with pytest.raises(VmafParseError, match="Invalid XML"):
+        parse_vmaf_file(_record_for_path(fixture))
+
+
+def test_parse_vmaf_file_leaves_missing_xml_file_as_os_error(tmp_path):
+    fixture = tmp_path / "missing_vmaf.xml"
+    record = FileRecord(
+        id="missing",
+        name=fixture.name,
+        path=fixture,
+        relative_path=fixture.name,
+        size=0,
+        mtime=0,
+    )
+
+    with pytest.raises(OSError):
+        parse_vmaf_file(record)

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "VMAF JSON output",
-  "description": "libvmaf log_fmt=json output. Top-level structure is stable; metrics inside frames vary by model/feature configuration.",
+  "description": "libvmaf log_fmt=json output. Top-level structure is stable; metrics inside frames vary by model/feature configuration. See also vmaf_schema.xsd (XML) and vmaf_schema.csvw.json (CSV on the Web) for sibling formats.",
   "type": "object",
   "required": ["version", "fps", "frames", "pooled_metrics"],
   "properties": {

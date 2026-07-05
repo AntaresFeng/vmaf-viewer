@@ -6,7 +6,7 @@ This file gives coding agents durable, repository-specific guidance. Keep it con
 
 VMAF Compare is a local toolkit for comparing video encodes with Netflix VMAF:
 
-- `vmaf-viewer` is a local FastAPI + static ECharts web app for comparing multiple `*_vmaf.json` files.
+- `vmaf-viewer` is a local FastAPI + static ECharts web app for comparing multiple `*.json` VMAF files.
 - The comparison focus is degraded-video vs degraded-video ranking, not only "where one encode differs from the source."
 
 Test media and generated VMAF output live under `videos/`. Treat `videos/` as local data only; never add it to git.
@@ -43,7 +43,7 @@ uv run python devscripts/fetch_echarts.py
 
 Check `pyproject.toml` for details. Available local tools:
 
-- Python 3.11+ managed with `uv`
+- Python 3.12+ managed with `uv`
 - `ffmpeg` with libvmaf support; verify with `ffmpeg -h filter=libvmaf`
 - `ffprobe`
 - `jq` for shell scripts

@@ -90,14 +90,16 @@ def _select_startup_data_dir(
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the local VMAF JSON viewer.")
+    parser = argparse.ArgumentParser(description="Run the local VMAF log viewer.")
     parser.add_argument(
-        "positional_data_dir", nargs="?", help="Directory containing *_vmaf.json files."
+        "positional_data_dir",
+        nargs="?",
+        help="Directory containing VMAF log files (*.json, *.csv, *.xml).",
     )
     parser.add_argument(
         "--data-dir",
         dest="flag_data_dir",
-        help="Directory containing *_vmaf.json files.",
+        help="Directory containing VMAF log files (*.json, *.csv, *.xml).",
     )
     return parser.parse_args(argv)
 
@@ -135,7 +137,7 @@ def _files_response(state: AppState) -> dict:
 
 def create_app(data_dir: Path | None = None) -> FastAPI:
     state = AppState(data_dir or _default_data_dir())
-    app = FastAPI(title="VMAF JSON Viewer")
+    app = FastAPI(title="VMAF Log Viewer")
     app.state.vmaf_viewer = state
 
     static_dir = Path(__file__).parent / "static"
@@ -169,7 +171,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def api_compare(request: CompareRequest) -> dict:
         if not request.file_ids:
             raise HTTPException(
-                status_code=400, detail="Select at least one VMAF JSON file."
+                status_code=400, detail="Select at least one VMAF log file."
             )
 
         records = state.selected_records(request.file_ids)
