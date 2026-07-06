@@ -6,6 +6,8 @@ import stat as _stat
 from pathlib import Path
 from typing import Iterator
 
+from natsort import os_sorted
+
 from .models import FileRecord
 
 _SUPPORTED_VMAF_LOG_PATTERNS = ("*.json", "*.csv", "*.xml")
@@ -53,7 +55,7 @@ def scan_vmaf_files(root: Path) -> list[FileRecord]:
         candidates.update(rglob_skip_dot_dirs(root, pattern))
 
     records: list[FileRecord] = []
-    for path in sorted(candidates):
+    for path in os_sorted(candidates):
         st = path.stat()
         if not _stat.S_ISREG(st.st_mode):
             continue

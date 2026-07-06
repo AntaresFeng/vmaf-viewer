@@ -1,4 +1,7 @@
 from pathlib import Path
+import platform
+
+import pytest
 
 from vmaf_viewer.scanner import scan_vmaf_files
 
@@ -64,3 +67,22 @@ def test_scan_vmaf_files_finds_json_csv_and_xml_logs(tmp_path):
     records = scan_vmaf_files(tmp_path)
 
     assert [record.name for record in records] == ["a.json", "b.csv", "c.xml"]
+
+
+@pytest.mark.skipif(
+    platform.system() != "Windows",
+    reason="os_sorted follows OS-native order; natural-order assertion is Windows-specific",
+)
+def test_scan_vmaf_files_uses_natural_sort(tmp_path):
+    # encode10.json sorts before encode2.json under plain lexicographic order;
+    # natural order (Windows Explorer / StrCmpLogicalW) puts encode2 first.
+    for name in ["encode10.json", "encode2.json", "encode1.json"]:
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+
+    records = scan_vmaf_files(tmp_path)
+
+    assert [r.name for r in records] == [
+        "encode1.json",
+        "encode2.json",
+        "encode10.json",
+    ]

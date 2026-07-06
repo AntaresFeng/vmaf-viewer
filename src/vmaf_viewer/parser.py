@@ -112,7 +112,9 @@ class CsvVmafParser:
                     raise VmafParseError(
                         f"{record.relative_path} is missing '{self._FRAME_COL}' column"
                     )
-                metric_names = [name for name in fieldnames if name and name != self._FRAME_COL]
+                metric_names = [
+                    name for name in fieldnames if name and name != self._FRAME_COL
+                ]
                 return [
                     RawFrame(
                         frame_num=row.get(self._FRAME_COL) or _MISSING_FRAME_NUM,

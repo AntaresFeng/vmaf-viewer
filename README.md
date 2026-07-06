@@ -23,7 +23,7 @@ The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend.
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/) for Python environment management
 - [`ffmpeg`](https://ffmpeg.org/) with libvmaf support if you generate VMAF logs locally
 
