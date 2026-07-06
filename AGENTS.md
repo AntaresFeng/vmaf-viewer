@@ -65,6 +65,7 @@ Check `pyproject.toml` for details. Available local tools:
 
 ## Documentation Links
 
+- VMAF CSV log structure: `docs/vmaf-csv-structure.md`
 - VMAF JSON schema: `docs/vmaf_schema.json`
 - VMAF zero-score investigation: `docs/vmaf-zero-score-issue.md` Essentially, it's frame synchronization.
 - fps filter / PTS normalization note: `docs/fps-filter-pts-normalization-side-effect.md`

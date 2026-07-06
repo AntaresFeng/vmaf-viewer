@@ -93,21 +93,29 @@ class JsonVmafParser:
 
 
 class CsvVmafParser:
-    """Parser for libvmaf ``log_fmt=csv`` output."""
+    """Parser for libvmaf ``log_fmt=csv`` output.
+
+    FFmpeg libvmaf writes CSV with the header row:
+    ``Frame,<features>,vmaf,`` — note the column is ``Frame``, not ``frameNum``.
+    """
+
+    # FFmpeg libvmaf CSV column that holds the frame index
+    _FRAME_COL = "Frame"
 
     def parse_frames(self, record: FileRecord) -> list[RawFrame]:
         try:
             with record.path.open("r", encoding="utf-8", newline="") as handle:
                 reader = csv.DictReader(handle)
                 fieldnames = reader.fieldnames or []
-                if "frameNum" not in fieldnames:
+                # FFmpeg libvmaf CSV uses "Frame" as the frame identifier column
+                if self._FRAME_COL not in fieldnames:
                     raise VmafParseError(
-                        f"{record.relative_path} is missing frameNum column"
+                        f"{record.relative_path} is missing '{self._FRAME_COL}' column"
                     )
-                metric_names = [name for name in fieldnames if name != "frameNum"]
+                metric_names = [name for name in fieldnames if name and name != self._FRAME_COL]
                 return [
                     RawFrame(
-                        frame_num=row.get("frameNum") or _MISSING_FRAME_NUM,
+                        frame_num=row.get(self._FRAME_COL) or _MISSING_FRAME_NUM,
                         metrics={name: row.get(name) for name in metric_names},
                     )
                     for row in reader

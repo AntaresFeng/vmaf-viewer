@@ -175,7 +175,7 @@ def test_parse_vmaf_file_treats_boolean_metrics_as_non_numeric(tmp_path):
 def test_parse_vmaf_file_extracts_csv_frames_metrics_and_primary_metric(tmp_path):
     fixture = tmp_path / "alpha_vmaf.csv"
     fixture.write_text(
-        "frameNum,vmaf,integer_motion\n0,97.0,1.0\n1,96.0,1.5\n2,90.0,2.0\n",
+        "Frame,vmaf,integer_motion\n0,97.0,1.0\n1,96.0,1.5\n2,90.0,2.0\n",
         encoding="utf-8",
     )
 
@@ -190,7 +190,7 @@ def test_parse_vmaf_file_extracts_csv_frames_metrics_and_primary_metric(tmp_path
 def test_parse_vmaf_file_treats_bad_csv_metric_cells_as_non_numeric(tmp_path):
     fixture = tmp_path / "mixed_vmaf.csv"
     fixture.write_text(
-        "frameNum,vmaf,integer_motion\n0,,1.0\n1,bad,2.0\n2,90.0,\n",
+        "Frame,vmaf,integer_motion\n0,,1.0\n1,bad,2.0\n2,90.0,\n",
         encoding="utf-8",
     )
 
@@ -208,13 +208,13 @@ def test_parse_vmaf_file_rejects_csv_missing_frame_num_column(tmp_path):
     fixture = tmp_path / "bad_vmaf.csv"
     fixture.write_text("vmaf\n99.0\n", encoding="utf-8")
 
-    with pytest.raises(VmafParseError, match="missing frameNum column"):
+    with pytest.raises(VmafParseError, match=r"missing 'Frame' column"):
         parse_vmaf_file(_record_for_path(fixture))
 
 
 def test_parse_vmaf_file_rejects_non_utf8_csv_as_invalid_csv(tmp_path):
     fixture = tmp_path / "bad_vmaf.csv"
-    fixture.write_bytes(b"frameNum,vmaf\n0,\xff\n")
+    fixture.write_bytes(b"Frame,vmaf\n0,\xff\n")
 
     with pytest.raises(VmafParseError, match="Invalid CSV"):
         parse_vmaf_file(_record_for_path(fixture))
@@ -223,7 +223,7 @@ def test_parse_vmaf_file_rejects_non_utf8_csv_as_invalid_csv(tmp_path):
 def test_parse_vmaf_file_uses_row_index_for_blank_csv_frame_num(tmp_path):
     fixture = tmp_path / "blank_frame_num_vmaf.csv"
     fixture.write_text(
-        "frameNum,vmaf\n,97.0\n,96.0\n5,95.0\n",
+        "Frame,vmaf\n,97.0\n,96.0\n5,95.0\n",
         encoding="utf-8",
     )
 

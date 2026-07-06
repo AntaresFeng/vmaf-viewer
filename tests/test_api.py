@@ -89,7 +89,7 @@ def test_api_compare_supports_mixed_json_csv_and_xml_logs(tmp_path):
         alpha.read_text(encoding="utf-8"), encoding="utf-8"
     )
     (tmp_path / "gamma_vmaf.csv").write_text(
-        "frameNum,vmaf,integer_motion\n0,93,1\n1,92,2\n2,91,3\n3,90,4\n",
+        "Frame,vmaf,integer_motion\n0,93,1\n1,92,2\n2,91,3\n3,90,4\n",
         encoding="utf-8",
     )
     (tmp_path / "delta_vmaf.xml").write_text(
@@ -174,7 +174,7 @@ def test_api_compare_skips_bad_csv_and_keeps_valid_results(tmp_path):
     assert response.status_code == 200
     body = response.json()
     assert [row["name"] for row in body["summary"]] == ["alpha_vmaf.json"]
-    assert body["warnings"] == ["bad_vmaf.csv is missing frameNum column"]
+    assert body["warnings"] == ["bad_vmaf.csv is missing 'Frame' column"]
 
 
 def test_api_compare_rejects_empty_selection():
