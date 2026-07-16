@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import json
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
 from vmaf_workflow.cli import main
-from vmaf_workflow.config import EasyVmafSettings
+from vmaf_workflow.config import EasyVmafSettings, RemoteSettings
 from vmaf_workflow.models import CommandResult
 from vmaf_workflow.project import WorkflowProject
 from vmaf_workflow.remote_plan import write_remote_plan
+from vmaf_workflow.remote_workflow import (
+    RemoteCommandError,
+    RemoteRunInterrupted,
+    RemoteWorkflowError,
+)
 
 YTDLP_PREFLIGHT_JSON = (
     '{"formats":[{"format_id":"299","format_note":"1080p60",'
@@ -384,6 +389,134 @@ def test_remote_plan_requires_project_dir(capsys) -> None:
     assert "--project-dir" in captured.err
 
 
+@pytest.mark.parametrize("command", ["upload", "run", "fetch-results"])
+def test_remote_commands_require_project_dir(command: str, capsys) -> None:
+    result = main([command])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "--project-dir" in captured.err
+
+
+def test_upload_passes_config_defaults_and_cli_target_overrides(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls = []
+    runner = object()
+
+    def fake_upload(project, settings, actual_runner):
+        calls.append((project, settings, actual_runner))
+        return {}
+
+    monkeypatch.setattr("vmaf_workflow.cli.upload_project", fake_upload)
+    project_dir = tmp_path / "video0"
+
+    result = main(
+        [
+            "upload",
+            "--project-dir",
+            str(project_dir),
+            "--host",
+            "gpu-alias",
+            "--remote-dir",
+            "/srv/vmaf jobs",
+        ],
+        runner=runner,
+    )
+
+    assert result == 0
+    project, settings, actual_runner = calls[0]
+    assert project.video_dir == project_dir
+    assert settings == RemoteSettings(
+        host="gpu-alias",
+        work_dir=PurePosixPath("/srv/vmaf jobs"),
+    )
+    assert actual_runner is runner
+
+
+@pytest.mark.parametrize("command", ["run", "fetch-results"])
+def test_run_and_fetch_do_not_accept_remote_target_overrides(
+    command: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                command,
+                "--project-dir",
+                "videos/video0",
+                "--host",
+                "other",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+
+
+def test_upload_maps_remote_command_failure_to_exit_code_1(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "vmaf_workflow.cli.upload_project",
+        lambda *_args: (_ for _ in ()).throw(
+            RemoteCommandError("preflight failed")
+        ),
+    )
+
+    result = main(
+        ["upload", "--project-dir", str(tmp_path / "video0")],
+        runner=object(),
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "preflight failed" in captured.err
+
+
+def test_run_maps_local_state_failure_to_exit_code_2(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "vmaf_workflow.cli.run_remote_project",
+        lambda *_args: (_ for _ in ()).throw(
+            RemoteWorkflowError("remote state is required")
+        ),
+    )
+
+    result = main(
+        ["run", "--project-dir", str(tmp_path / "video0")],
+        runner=object(),
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "remote state is required" in captured.err
+
+
+def test_run_maps_interrupt_to_exit_code_130(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "vmaf_workflow.cli.run_remote_project",
+        lambda *_args: (_ for _ in ()).throw(RemoteRunInterrupted()),
+    )
+
+    result = main(
+        ["run", "--project-dir", str(tmp_path / "video0")],
+        runner=object(),
+    )
+
+    captured = capsys.readouterr()
+    assert result == 130
+    assert "interrupted" in captured.err
+
+
 def test_remote_plan_requires_inventory_and_package_manifest(
     tmp_path: Path, capsys
 ) -> None:
@@ -514,6 +647,7 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert remote_plan["easyvmaf_repo"] == "/opt/easy Vmaf"
     assert remote_plan["package_archive"] == "video0-inputs.tar"
     assert remote_plan["result_archive"] == "video0-json.tar.gz"
+    assert remote_plan["environment_preflight_argument"] == "--environment-only"
     assert remote_plan["preflight_argument"] == "--preflight-only"
     assert remote_plan["requirements"] == {
         "ffmpeg": {"minimum_major": 5, "required_filter": "libvmaf"},
@@ -555,6 +689,7 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert "require_command ffmpeg" in script
     assert "require_command ffprobe" in script
     assert "require_command git" in script
+    assert "require_command sha256sum" in script
     assert "check_version ffmpeg 5" in script
     assert "check_version ffprobe 5" in script
     assert "ffmpeg -hide_banner -h filter=libvmaf" in script
@@ -562,7 +697,7 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert "EASYVMAF_EXECUTABLE='/opt/easy Vmaf/.venv/bin/easyvmaf'" in script
     assert "EASYVMAF_REQUIRED_BRANCH=master" in script
     assert 'MODE=${1:-run}' in script
-    assert 'usage: $0 [--preflight-only]' in script
+    assert 'usage: $0 [--environment-only|--preflight-only]' in script
     assert '"$EASYVMAF_EXECUTABLE" --help' in script
     assert (
         'git -C "$EASYVMAF_REPO" symbolic-ref --quiet --short HEAD'
@@ -572,11 +707,16 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert "easyVmaf branch mismatch: expected" in script
     assert 'info "easyVmaf branch: $easyvmaf_branch"' in script
     assert 'git -C "$EASYVMAF_REPO" rev-parse --short HEAD' in script
+    assert "if [[ $MODE == --environment-only ]]" in script
+    assert 'info "environment preflight complete"' in script
     assert '[[ -f "$PACKAGE_ARCHIVE" ]]' in script
     assert 'tar -tf "$PACKAGE_ARCHIVE"' in script
     assert "if [[ $MODE == --preflight-only ]]" in script
     assert 'info "preflight complete"' in script
     assert 'tar -xf "$PACKAGE_ARCHIVE"' in script
+    assert script.index("if [[ $MODE == --environment-only ]]") < script.index(
+        '[[ -f "$PACKAGE_ARCHIVE" ]]'
+    )
     assert script.count('"$EASYVMAF_EXECUTABLE" -d ') == 3
     assert "-d 'video0/ref movie.mp4'" not in script
     assert "-d 'video0/普通 1080.mp4' -r 'video0/ref movie.mp4'" in script

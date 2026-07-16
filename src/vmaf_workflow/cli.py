@@ -6,7 +6,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from vmaf_workflow.bbdown import (
     bbdown_info_argv,
@@ -21,6 +21,15 @@ from vmaf_workflow.models import CommandResult, DownloadDecision, Manifest
 from vmaf_workflow.packager import PackageError, package_project
 from vmaf_workflow.prepare import PrepareError, prepare_project
 from vmaf_workflow.remote_plan import RemotePlanError, write_remote_plan
+from vmaf_workflow.remote_transport import RemoteTargetError
+from vmaf_workflow.remote_workflow import (
+    RemoteCommandError,
+    RemoteRunInterrupted,
+    RemoteWorkflowError,
+    fetch_results,
+    run_remote_project,
+    upload_project,
+)
 from vmaf_workflow.project import (
     WorkflowProject,
     bbdown_config_text,
@@ -43,15 +52,22 @@ from vmaf_workflow.ytdlp import (
 def main(argv: Sequence[str] | None = None, runner=None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    command_runner = runner or SubprocessRunner()
 
     if args.command == "download":
-        return _download(args, runner or SubprocessRunner())
+        return _download(args, command_runner)
     if args.command == "prepare":
         return _prepare(args)
     if args.command == "package":
         return _package(args)
     if args.command == "remote-plan":
         return _remote_plan(args)
+    if args.command == "upload":
+        return _upload(args, command_runner)
+    if args.command == "run":
+        return _run_remote(args, command_runner)
+    if args.command == "fetch-results":
+        return _fetch_results(args, command_runner)
 
     parser.error("a command is required")
     return 2
@@ -87,7 +103,83 @@ def _build_parser() -> argparse.ArgumentParser:
     remote_plan.add_argument("--project-dir", type=Path)
     remote_plan.add_argument("--easyvmaf-repo", type=Path)
 
+    upload = subparsers.add_parser("upload")
+    upload.add_argument("--project-dir", type=Path)
+    upload.add_argument("--host")
+    upload.add_argument("--remote-dir", type=PurePosixPath)
+
+    run = subparsers.add_parser("run")
+    run.add_argument("--project-dir", type=Path)
+
+    fetch_results_parser = subparsers.add_parser("fetch-results")
+    fetch_results_parser.add_argument("--project-dir", type=Path)
+
     return parser
+
+
+def _upload(args: argparse.Namespace, runner) -> int:
+    if args.project_dir is None:
+        print("vmaf-workflow upload: --project-dir is required", file=sys.stderr)
+        return 2
+    project = _explicit_project(args.project_dir)
+    settings = default_settings().remote.with_target(
+        host=args.host,
+        work_dir=args.remote_dir,
+    )
+    try:
+        upload_project(project, settings, runner)
+    except (RemoteWorkflowError, RemoteTargetError) as exc:
+        print(f"vmaf-workflow upload: {exc}", file=sys.stderr)
+        return 2
+    except RemoteCommandError as exc:
+        print(f"vmaf-workflow upload: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _run_remote(args: argparse.Namespace, runner) -> int:
+    if args.project_dir is None:
+        print("vmaf-workflow run: --project-dir is required", file=sys.stderr)
+        return 2
+    project = _explicit_project(args.project_dir)
+    try:
+        run_remote_project(project, default_settings().remote, runner)
+    except (RemoteWorkflowError, RemoteTargetError) as exc:
+        print(f"vmaf-workflow run: {exc}", file=sys.stderr)
+        return 2
+    except RemoteRunInterrupted:
+        print("vmaf-workflow run: interrupted", file=sys.stderr)
+        return 130
+    except RemoteCommandError as exc:
+        print(f"vmaf-workflow run: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _fetch_results(args: argparse.Namespace, runner) -> int:
+    if args.project_dir is None:
+        print(
+            "vmaf-workflow fetch-results: --project-dir is required",
+            file=sys.stderr,
+        )
+        return 2
+    project = _explicit_project(args.project_dir)
+    try:
+        fetch_results(project, default_settings().remote, runner)
+    except (RemoteWorkflowError, RemoteTargetError) as exc:
+        print(f"vmaf-workflow fetch-results: {exc}", file=sys.stderr)
+        return 2
+    except RemoteCommandError as exc:
+        print(f"vmaf-workflow fetch-results: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _explicit_project(project_dir: Path) -> WorkflowProject:
+    return WorkflowProject(
+        video_dir=project_dir,
+        workflow_dir=project_dir / ".workflow",
+    )
 
 
 def _remote_plan(args: argparse.Namespace) -> int:
@@ -95,10 +187,7 @@ def _remote_plan(args: argparse.Namespace) -> int:
         print("vmaf-workflow remote-plan: --project-dir is required", file=sys.stderr)
         return 2
 
-    project = WorkflowProject(
-        video_dir=args.project_dir,
-        workflow_dir=args.project_dir / ".workflow",
-    )
+    project = _explicit_project(args.project_dir)
     settings = default_settings().easyvmaf
     if args.easyvmaf_repo is not None:
         settings = settings.with_repo_dir(args.easyvmaf_repo)
@@ -117,10 +206,7 @@ def _package(args: argparse.Namespace) -> int:
         print("vmaf-workflow package: --project-dir is required", file=sys.stderr)
         return 2
 
-    project = WorkflowProject(
-        video_dir=args.project_dir,
-        workflow_dir=args.project_dir / ".workflow",
-    )
+    project = _explicit_project(args.project_dir)
     try:
         package_project(project, args.output)
     except PackageError as exc:

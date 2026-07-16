@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from io import StringIO
+from pathlib import Path
 
 import pytest
 
@@ -85,3 +87,83 @@ def test_write_manifest_writes_jq_friendly_nested_json(tmp_path) -> None:
 def test_write_manifest_rejects_non_standard_json_numbers(tmp_path) -> None:
     with pytest.raises(ValueError):
         write_manifest(tmp_path / "manifest.json", {"bad": float("nan")})
+
+
+def test_subprocess_runner_streams_stdout_and_writes_log(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    calls = []
+
+    class FakeProcess:
+        stdout = StringIO("first\rsecond\n")
+
+        def wait(self, timeout=None):
+            assert timeout is None
+            return 7
+
+    def fake_popen(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return FakeProcess()
+
+    monkeypatch.setattr("vmaf_workflow.runner.subprocess.Popen", fake_popen)
+    log_path = tmp_path / "logs" / "remote.log"
+
+    returncode = SubprocessRunner().stream(
+        ["ssh", "3080", "command"],
+        log_path,
+    )
+
+    captured = capsys.readouterr()
+    assert returncode == 7
+    assert captured.out == "first\rsecond\n"
+    assert log_path.read_text(encoding="utf-8") == "first\nsecond\n"
+    assert calls == [
+        (
+            ["ssh", "3080", "command"],
+            {
+                "stdout": -1,
+                "stderr": -2,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "shell": False,
+            },
+        )
+    ]
+
+
+def test_subprocess_runner_terminates_streaming_process_on_interrupt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class InterruptingStdout:
+        def read(self, _size):
+            raise KeyboardInterrupt
+
+    class FakeProcess:
+        stdout = InterruptingStdout()
+        terminated = False
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            assert self.terminated
+            assert timeout == 5
+            return 130
+
+    process = FakeProcess()
+    monkeypatch.setattr(
+        "vmaf_workflow.runner.subprocess.Popen",
+        lambda *_args, **_kwargs: process,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        SubprocessRunner().stream(
+            ["ssh", "3080", "command"],
+            tmp_path / "remote.log",
+        )
+
+    assert process.terminated is True

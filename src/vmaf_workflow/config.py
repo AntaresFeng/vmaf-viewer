@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -100,11 +100,36 @@ class EasyVmafSettings:
 
 
 @dataclass(frozen=True)
+class RemoteSettings:
+    host: str = "3080"
+    work_dir: PurePosixPath = PurePosixPath("/home/fzx/vmaf_compare")
+    ssh_executable: Path = Path("ssh")
+    scp_executable: Path = Path("scp")
+    connect_timeout_seconds: int = 10
+    server_alive_interval_seconds: int = 30
+
+    def with_target(
+        self,
+        host: str | None = None,
+        work_dir: PurePosixPath | None = None,
+    ) -> "RemoteSettings":
+        return RemoteSettings(
+            host=self.host if host is None else host,
+            work_dir=self.work_dir if work_dir is None else work_dir,
+            ssh_executable=self.ssh_executable,
+            scp_executable=self.scp_executable,
+            connect_timeout_seconds=self.connect_timeout_seconds,
+            server_alive_interval_seconds=self.server_alive_interval_seconds,
+        )
+
+
+@dataclass(frozen=True)
 class WorkflowSettings:
     videos_dir: Path = Path("videos")
     bbdown: BBDownSettings = field(default_factory=BBDownSettings)
     ytdlp: YtDlpSettings = field(default_factory=YtDlpSettings)
     easyvmaf: EasyVmafSettings = field(default_factory=EasyVmafSettings)
+    remote: RemoteSettings = field(default_factory=RemoteSettings)
 
 
 def default_settings() -> WorkflowSettings:

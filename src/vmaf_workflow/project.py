@@ -62,6 +62,26 @@ class WorkflowProject:
     def remote_plan_script_path(self) -> Path:
         return self.workflow_dir / "remote-plan.sh"
 
+    @property
+    def remote_state_path(self) -> Path:
+        return self.workflow_dir / "remote-state.json"
+
+    @property
+    def remote_upload_log_path(self) -> Path:
+        return self.workflow_dir / "remote-upload.log"
+
+    @property
+    def remote_run_log_path(self) -> Path:
+        return self.workflow_dir / "remote-run.log"
+
+    @property
+    def remote_fetch_log_path(self) -> Path:
+        return self.workflow_dir / "remote-fetch.log"
+
+    @property
+    def default_result_archive_path(self) -> Path:
+        return self.workflow_dir / f"{self.video_dir.name}-json.tar.gz"
+
 
 def next_video_dir(videos_dir: Path) -> Path:
     max_index = -1

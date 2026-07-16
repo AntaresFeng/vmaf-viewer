@@ -183,6 +183,17 @@ def test_workflow_project_paths_and_write_text_create_parent_dirs(
         project.workflow_dir / "yt-dlp.after_video.jsonl"
     )
     assert project.manifest_path == project.workflow_dir / "manifest.json"
+    assert project.remote_state_path == project.workflow_dir / "remote-state.json"
+    assert project.remote_upload_log_path == (
+        project.workflow_dir / "remote-upload.log"
+    )
+    assert project.remote_run_log_path == project.workflow_dir / "remote-run.log"
+    assert project.remote_fetch_log_path == (
+        project.workflow_dir / "remote-fetch.log"
+    )
+    assert project.default_result_archive_path == (
+        project.workflow_dir / "video0-json.tar.gz"
+    )
 
     target = tmp_path / "nested" / "utf8.txt"
     write_text(target, "hello\n")

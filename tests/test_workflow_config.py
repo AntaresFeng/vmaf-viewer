@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import tomllib
 
 from vmaf_workflow.config import (
@@ -45,6 +45,12 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
     assert settings.easyvmaf.threads is None
     assert settings.easyvmaf.ffmpeg_min_major == 5
     assert settings.easyvmaf.required_branch == "master"
+    assert settings.remote.host == "3080"
+    assert settings.remote.work_dir == PurePosixPath("/home/fzx/vmaf_compare")
+    assert settings.remote.ssh_executable == Path("ssh")
+    assert settings.remote.scp_executable == Path("scp")
+    assert settings.remote.connect_timeout_seconds == 10
+    assert settings.remote.server_alive_interval_seconds == 30
     assert YTDLP_FORMAT_SELECTOR == "all[height>=1080][vcodec!=none][acodec=none]"
 
 

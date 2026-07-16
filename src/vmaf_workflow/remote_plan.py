@@ -59,7 +59,7 @@ def write_remote_plan(
         raise RemotePlanError(
             "media-inventory.json must contain at least one distorted file"
         )
-    package_archive = _validate_package(project, inventory, package_manifest)
+    package_archive = validate_package_inputs(project, inventory, package_manifest)
     result_archive = f"{project.video_dir.name}-json.tar.gz"
 
     commands = [
@@ -76,6 +76,7 @@ def write_remote_plan(
         "easyvmaf_executable": executable,
         "package_archive": package_archive,
         "result_archive": result_archive,
+        "environment_preflight_argument": "--environment-only",
         "preflight_argument": "--preflight-only",
         "requirements": {
             "ffmpeg": {
@@ -205,7 +206,7 @@ def _validate_project_relative_path(relative_path: str) -> None:
         raise RemotePlanError(f"inventory path is outside project: {relative_path}")
 
 
-def _validate_package(
+def validate_package_inputs(
     project: WorkflowProject,
     inventory: dict[str, Any],
     package_manifest: dict[str, Any],
@@ -368,16 +369,23 @@ def _write_script(
         f"RESULT_ARCHIVE={_shell_quote(result_archive)}",
         'MODE=${1:-run}',
         "",
-        '[[ $# -le 1 ]] || die "usage: $0 [--preflight-only]"',
+        (
+            '[[ $# -le 1 ]] '
+            '|| die "usage: $0 [--environment-only|--preflight-only]"'
+        ),
         'case "$MODE" in',
-        "  run|--preflight-only) ;;",
-        '  *) die "usage: $0 [--preflight-only]" ;;',
+        "  run|--environment-only|--preflight-only) ;;",
+        (
+            '  *) die "usage: $0 '
+            '[--environment-only|--preflight-only]" ;;'
+        ),
         "esac",
         "",
         "require_command tar",
         "require_command ffmpeg",
         "require_command ffprobe",
         "require_command git",
+        "require_command sha256sum",
         f"check_version ffmpeg {settings.ffmpeg_min_major}",
         f"check_version ffprobe {settings.ffmpeg_min_major}",
         (
@@ -412,6 +420,10 @@ def _write_script(
             '"$EASYVMAF_EXECUTABLE" --help >/dev/null 2>&1 '
             '|| die "easyVmaf executable failed its help check"'
         ),
+        'if [[ $MODE == --environment-only ]]; then',
+        '  info "environment preflight complete"',
+        "  exit 0",
+        "fi",
         (
             '[[ -f "$PACKAGE_ARCHIVE" ]] '
             '|| die "package archive is missing: $PACKAGE_ARCHIVE"'
