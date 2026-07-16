@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import subprocess
 import sys
 from pathlib import Path
@@ -38,23 +39,39 @@ class SubprocessRunner:
             argv,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            text=False,
             shell=False,
         )
         mode = "a" if append else "w"
         try:
             if process.stdout is None:
                 raise RuntimeError("streaming process stdout is unavailable")
+            read_available = getattr(process.stdout, "read1", None)
+            if read_available is None:
+                read_available = process.stdout.read
+            decoder = codecs.getincrementaldecoder("utf-8")(
+                errors="replace"
+            )
             with log_path.open(mode, encoding="utf-8", newline="") as log_file:
                 while True:
-                    chunk = process.stdout.read(4096)
+                    chunk = read_available(4096)
                     if not chunk:
                         break
-                    sys.stdout.write(chunk)
+                    text = (
+                        chunk
+                        if isinstance(chunk, str)
+                        else decoder.decode(chunk)
+                    )
+                    if text:
+                        sys.stdout.write(text)
+                        sys.stdout.flush()
+                        log_file.write(text)
+                        log_file.flush()
+                tail = decoder.decode(b"", final=True)
+                if tail:
+                    sys.stdout.write(tail)
                     sys.stdout.flush()
-                    log_file.write(chunk)
+                    log_file.write(tail)
                     log_file.flush()
             return process.wait()
         except KeyboardInterrupt:

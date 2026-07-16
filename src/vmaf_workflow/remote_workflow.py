@@ -10,7 +10,11 @@ from typing import Any
 from vmaf_workflow.config import RemoteSettings
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.project import WorkflowProject
-from vmaf_workflow.remote_plan import RemotePlanError, validate_package_inputs
+from vmaf_workflow.remote_plan import (
+    RESULT_PROVENANCE_NAME,
+    RemotePlanError,
+    validate_package_inputs,
+)
 from vmaf_workflow.remote_state import (
     RemoteStateError,
     load_remote_state,
@@ -75,22 +79,53 @@ def upload_project(
         "preflight_argument",
         "remote-plan.json",
     )
+    result_provenance = _required_string(
+        plan,
+        "result_provenance",
+        "remote-plan.json",
+    )
+    if result_provenance != RESULT_PROVENANCE_NAME:
+        raise RemoteWorkflowError(
+            "remote-plan.json result_provenance is unsupported"
+        )
     package_path = _resolve_package_path(project, package_manifest, package_name)
     package_sha256 = sha256_file(package_path)
     script_sha256 = sha256_file(project.remote_plan_script_path)
     plan_sha256 = sha256_file(project.remote_plan_path)
+    provenance = {
+        "schema_version": 1,
+        "project": project.video_dir.name,
+        "plan_sha256": plan_sha256,
+        "package_sha256": package_sha256,
+        "script_sha256": script_sha256,
+    }
+    write_manifest(project.remote_provenance_path, provenance)
+    provenance_sha256 = sha256_file(project.remote_provenance_path)
 
-    active_transport = transport or RemoteTransport(settings, runner)
-    remote_script_path = settings.work_dir / project.remote_plan_script_path.name
-    remote_package_path = settings.work_dir / package_name
+    target_settings = settings.with_target(
+        work_dir=(
+            settings.work_dir
+            / project.video_dir.name
+            / plan_sha256
+        )
+    )
+    active_transport = transport or RemoteTransport(target_settings, runner)
+    remote_script_path = (
+        target_settings.work_dir / project.remote_plan_script_path.name
+    )
+    remote_package_path = target_settings.work_dir / package_name
+    remote_provenance_path = (
+        target_settings.work_dir / result_provenance
+    )
     started_at = utc_now()
     state: dict[str, Any] = {
         "schema_version": 1,
         "project": project.video_dir.name,
         "updated_at": started_at,
         "remote": {
-            "host": settings.host,
-            "work_dir": settings.work_dir.as_posix(),
+            "host": target_settings.host,
+            "base_work_dir": settings.work_dir.as_posix(),
+            "work_dir": target_settings.work_dir.as_posix(),
         },
         "plan": {
             "path": str(project.remote_plan_path),
@@ -111,6 +146,11 @@ def upload_project(
                 remote_script_path,
                 script_sha256,
             ),
+            "provenance": _artifact_state(
+                project.remote_provenance_path,
+                remote_provenance_path,
+                provenance_sha256,
+            ),
         },
     }
     project.remote_upload_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,6 +170,15 @@ def upload_project(
             project.remote_upload_log_path,
         )
         state["upload"]["script"]["transferred"] = script_transferred
+
+        stage = "upload-provenance"
+        provenance_transferred = active_transport.upload_atomic(
+            project.remote_provenance_path,
+            remote_provenance_path,
+            provenance_sha256,
+            project.remote_upload_log_path,
+        )
+        state["upload"]["provenance"]["transferred"] = provenance_transferred
 
         stage = "environment-preflight"
         environment_returncode = active_transport.stream_script(
@@ -168,6 +217,12 @@ def upload_project(
             package_sha256,
             project.remote_upload_log_path,
         )
+        _require_remote_hash(
+            active_transport,
+            remote_provenance_path,
+            provenance_sha256,
+            project.remote_upload_log_path,
+        )
 
         stage = "package-preflight"
         preflight_returncode = active_transport.stream_script(
@@ -195,6 +250,17 @@ def upload_project(
         if isinstance(exc, RemoteCommandError):
             raise
         raise RemoteCommandError(str(exc)) from exc
+    except KeyboardInterrupt as exc:
+        state["upload"].update(
+            {
+                "status": "interrupted",
+                "stage": stage,
+                "completed_at": utc_now(),
+                "returncode": 130,
+            }
+        )
+        write_remote_state(project.remote_state_path, state)
+        raise RemoteRunInterrupted() from exc
 
     state["upload"].update(
         {
@@ -246,8 +312,28 @@ def run_remote_project(
     state.pop("fetch", None)
     write_remote_state(project.remote_state_path, state)
 
-    stage = "preflight"
+    stage = "verify-inputs"
     try:
+        _require_uploaded_artifact_hash(
+            state,
+            active_transport,
+            "script",
+            project.remote_run_log_path,
+        )
+        _require_uploaded_artifact_hash(
+            state,
+            active_transport,
+            "package",
+            project.remote_run_log_path,
+        )
+        _require_uploaded_artifact_hash(
+            state,
+            active_transport,
+            "provenance",
+            project.remote_run_log_path,
+        )
+
+        stage = "preflight"
         preflight_returncode = active_transport.stream_script(
             script_remote_path,
             preflight_argument,
@@ -339,6 +425,11 @@ def fetch_results(
         "remote-plan.json",
     )
     expected_results = _expected_result_paths(plan, project)
+    result_provenance = _required_string(
+        plan,
+        "result_provenance",
+        "remote-plan.json",
+    )
     run_state = state.get("run")
     if isinstance(run_state, dict) and run_state.get("status") == "completed":
         result_state = run_state.get("result")
@@ -404,23 +495,32 @@ def fetch_results(
             temp_archive,
             expected_results,
             project,
+            result_provenance,
+            state,
         )
 
         stage = "install"
-        staging_dir.mkdir(parents=True)
-        installed_paths = []
-        for destination, content in validated_files:
-            relative_destination = destination.relative_to(project.video_dir)
-            staged_path = staging_dir / relative_destination
-            staged_path.parent.mkdir(parents=True, exist_ok=True)
-            staged_path.write_bytes(content)
-        for destination, _content in validated_files:
-            relative_destination = destination.relative_to(project.video_dir)
-            staged_path = staging_dir / relative_destination
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            staged_path.replace(destination)
-            installed_paths.append(destination)
-        temp_archive.replace(project.default_result_archive_path)
+        installed_paths = _install_results_transactionally(
+            project,
+            validated_files,
+            temp_archive,
+            staging_dir,
+        )
+    except KeyboardInterrupt as exc:
+        state["fetch"].update(
+            {
+                "status": "interrupted",
+                "stage": stage,
+                "completed_at": utc_now(),
+                "returncode": 130,
+            }
+        )
+        write_remote_state(project.remote_state_path, state)
+        if temp_archive.exists():
+            temp_archive.unlink()
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+        raise RemoteRunInterrupted() from exc
     except (
         OSError,
         tarfile.TarError,
@@ -655,8 +755,10 @@ def _read_validated_results(
     archive_path: Path,
     expected_results: list[str],
     project: WorkflowProject,
+    result_provenance: str,
+    state: dict[str, Any],
 ) -> list[tuple[Path, bytes]]:
-    expected_set = set(expected_results)
+    expected_set = {*expected_results, result_provenance}
     validated = []
     with tarfile.open(archive_path, "r:gz") as archive:
         members = archive.getmembers()
@@ -666,10 +768,26 @@ def _read_validated_results(
                 "result archive contains duplicate members"
             )
         if set(member_names) != expected_set:
+            if result_provenance not in member_names:
+                raise RemoteWorkflowError(
+                    "result archive is missing provenance"
+                )
             raise RemoteWorkflowError(
                 "result archive members do not match remote plan"
             )
         members_by_name = {member.name: member for member in members}
+        provenance_member = members_by_name[result_provenance]
+        if not provenance_member.isfile():
+            raise RemoteWorkflowError(
+                "result provenance is not a regular file"
+            )
+        provenance_file = archive.extractfile(provenance_member)
+        if provenance_file is None:
+            raise RemoteWorkflowError("result provenance cannot be read")
+        provenance = json.loads(
+            provenance_file.read().decode("utf-8")
+        )
+        _validate_result_provenance(provenance, state)
         for expected_path in expected_results:
             member = members_by_name[expected_path]
             if not member.isfile():
@@ -694,6 +812,108 @@ def _read_validated_results(
     return validated
 
 
+def _validate_result_provenance(
+    provenance: Any,
+    state: dict[str, Any],
+) -> None:
+    if not isinstance(provenance, dict):
+        raise RemoteWorkflowError("result provenance must be a JSON object")
+    if provenance.get("schema_version") != 1:
+        raise RemoteWorkflowError(
+            "result provenance schema_version must be 1"
+        )
+    if provenance.get("project") != state.get("project"):
+        raise RemoteWorkflowError("result provenance project does not match")
+    plan_state = state.get("plan")
+    upload_state = state.get("upload")
+    if not isinstance(plan_state, dict) or not isinstance(upload_state, dict):
+        raise RemoteWorkflowError("remote state provenance inputs are invalid")
+    if provenance.get("plan_sha256") != plan_state.get("sha256"):
+        raise RemoteWorkflowError(
+            "result provenance plan SHA-256 does not match"
+        )
+    for artifact, key in (
+        ("package", "package_sha256"),
+        ("script", "script_sha256"),
+    ):
+        artifact_state = upload_state.get(artifact)
+        if (
+            not isinstance(artifact_state, dict)
+            or provenance.get(key) != artifact_state.get("sha256")
+        ):
+            raise RemoteWorkflowError(
+                f"result provenance {artifact} SHA-256 does not match"
+            )
+
+
+def _install_results_transactionally(
+    project: WorkflowProject,
+    validated_files: list[tuple[Path, bytes]],
+    temp_archive: Path,
+    staging_dir: Path,
+) -> list[Path]:
+    staging_dir.mkdir(parents=True)
+    staged_files: list[tuple[Path, Path]] = []
+    for destination, content in validated_files:
+        relative_destination = destination.relative_to(project.video_dir)
+        staged_path = staging_dir / relative_destination
+        staged_path.parent.mkdir(parents=True, exist_ok=True)
+        staged_path.write_bytes(content)
+        staged_files.append((staged_path, destination))
+
+    backup_dir = project.workflow_dir / (
+        f".results-backup-{uuid.uuid4().hex}"
+    )
+    backup_dir.mkdir(parents=True)
+    backup_targets = [
+        destination for _staged_path, destination in staged_files
+    ]
+    backup_targets.append(project.default_result_archive_path)
+    backups: list[tuple[Path, Path]] = []
+    installed: list[Path] = []
+    try:
+        for index, destination in enumerate(backup_targets):
+            if not destination.exists():
+                continue
+            backup_path = backup_dir / f"{index}-{destination.name}"
+            destination.replace(backup_path)
+            backups.append((backup_path, destination))
+
+        for staged_path, destination in staged_files:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            staged_path.replace(destination)
+            installed.append(destination)
+
+        temp_archive.replace(project.default_result_archive_path)
+        installed.append(project.default_result_archive_path)
+    except BaseException as exc:
+        rollback_errors = []
+        for installed_path in reversed(installed):
+            try:
+                if installed_path.exists():
+                    installed_path.unlink()
+            except OSError as rollback_exc:
+                rollback_errors.append(str(rollback_exc))
+        for backup_path, destination in reversed(backups):
+            try:
+                if backup_path.exists():
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    backup_path.replace(destination)
+            except OSError as rollback_exc:
+                rollback_errors.append(str(rollback_exc))
+        if rollback_errors:
+            raise RemoteWorkflowError(
+                f"{exc}; result rollback failed: "
+                + "; ".join(rollback_errors)
+            ) from exc
+        raise
+    finally:
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    return [destination for _staged_path, destination in staged_files]
+
+
 def _require_remote_hash(
     transport,
     remote_path: PurePosixPath,
@@ -703,6 +923,34 @@ def _require_remote_hash(
     actual_sha256 = transport.remote_sha256(remote_path, log_path)
     if actual_sha256 != expected_sha256:
         raise RemoteCommandError(f"remote SHA-256 mismatch: {remote_path}")
+
+
+def _require_uploaded_artifact_hash(
+    state: dict[str, Any],
+    transport,
+    artifact: str,
+    log_path: Path,
+) -> None:
+    artifact_state = state.get("upload", {}).get(artifact)
+    if not isinstance(artifact_state, dict):
+        raise RemoteWorkflowError(
+            f"remote state has no upload.{artifact} section"
+        )
+    remote_path = _pure_posix_path(
+        artifact_state.get("remote_path"),
+        f"remote state upload.{artifact}.remote_path",
+    )
+    expected_sha256 = artifact_state.get("sha256")
+    if not isinstance(expected_sha256, str):
+        raise RemoteWorkflowError(
+            f"remote state upload.{artifact}.sha256 is invalid"
+        )
+    _require_remote_hash(
+        transport,
+        remote_path,
+        expected_sha256,
+        log_path,
+    )
 
 
 def _resolve_package_path(

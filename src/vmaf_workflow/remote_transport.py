@@ -103,28 +103,33 @@ class RemoteTransport:
         temp_path = remote_path.with_name(
             f".{remote_path.name}.uploading-{uuid.uuid4().hex}"
         )
-        returncode = self.runner.stream(
-            self.scp_upload_argv(local_path, temp_path),
-            log_path,
-            append=True,
-        )
-        if returncode != 0:
-            raise RemoteTransportError(f"failed to upload: {local_path}")
-
-        temp_sha256 = self.remote_sha256(temp_path, log_path)
-        if temp_sha256 != expected_sha256:
-            self.run_remote(f"rm -f -- {_quote(temp_path.as_posix())}", log_path)
-            raise RemoteTransportError(
-                f"uploaded SHA-256 mismatch: {remote_path}"
+        try:
+            returncode = self._stream(
+                self.scp_upload_argv(local_path, temp_path),
+                log_path,
+                append=True,
             )
+            if returncode != 0:
+                raise RemoteTransportError(f"failed to upload: {local_path}")
 
-        result = self.run_remote(
-            f"mv -f -- {_quote(temp_path.as_posix())} "
-            f"{_quote(remote_path.as_posix())}",
-            log_path,
-        )
-        if result.returncode != 0:
-            raise RemoteTransportError(f"failed to install remote file: {remote_path}")
+            temp_sha256 = self.remote_sha256(temp_path, log_path)
+            if temp_sha256 != expected_sha256:
+                raise RemoteTransportError(
+                    f"uploaded SHA-256 mismatch: {remote_path}"
+                )
+
+            result = self.run_remote(
+                f"mv -f -- {_quote(temp_path.as_posix())} "
+                f"{_quote(remote_path.as_posix())}",
+                log_path,
+            )
+            if result.returncode != 0:
+                raise RemoteTransportError(
+                    f"failed to install remote file: {remote_path}"
+                )
+        except BaseException:
+            self._remove_remote_file(temp_path, log_path)
+            raise
         return True
 
     def stream_script(
@@ -141,7 +146,7 @@ class RemoteTransport:
             f"cd {_quote(script_path.parent.as_posix())} && "
             + " ".join(_quote(value) for value in argv)
         )
-        return self.runner.stream(
+        return self._stream(
             self.ssh_argv(remote_command),
             log_path,
             append=append,
@@ -161,18 +166,60 @@ class RemoteTransport:
         local_path: Path,
         log_path: Path,
     ) -> None:
-        returncode = self.runner.stream(
-            self.scp_download_argv(remote_path, local_path),
-            log_path,
-            append=True,
-        )
-        if returncode != 0:
-            raise RemoteTransportError(f"failed to download: {remote_path}")
+        try:
+            returncode = self._stream(
+                self.scp_download_argv(remote_path, local_path),
+                log_path,
+                append=True,
+            )
+            if returncode != 0:
+                raise RemoteTransportError(
+                    f"failed to download: {remote_path}"
+                )
+        except BaseException:
+            _remove_local_file(local_path)
+            raise
 
     def run_remote(self, remote_command: str, log_path: Path) -> CommandResult:
-        result = self.runner.run(self.ssh_argv(remote_command))
+        argv = self.ssh_argv(remote_command)
+        try:
+            result = self.runner.run(argv)
+        except OSError as exc:
+            raise RemoteTransportError(
+                f"failed to start {argv[0]}: {exc}"
+            ) from exc
         _append_result(log_path, result)
         return result
+
+    def _stream(
+        self,
+        argv: list[str],
+        log_path: Path,
+        append: bool,
+    ) -> int:
+        try:
+            return self.runner.stream(
+                argv,
+                log_path,
+                append=append,
+            )
+        except OSError as exc:
+            raise RemoteTransportError(
+                f"failed to start {argv[0]}: {exc}"
+            ) from exc
+
+    def _remove_remote_file(
+        self,
+        remote_path: PurePosixPath,
+        log_path: Path,
+    ) -> None:
+        try:
+            self.run_remote(
+                f"rm -f -- {_quote(remote_path.as_posix())}",
+                log_path,
+            )
+        except RemoteTransportError:
+            pass
 
     def _connection_options(self) -> list[str]:
         return [
@@ -218,6 +265,14 @@ def _append_result(log_path: Path, result: CommandResult) -> None:
             log_file.write(result.stdout)
         if result.stderr:
             log_file.write(result.stderr)
+
+
+def _remove_local_file(path: Path) -> None:
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
 
 
 def _quote(value: str) -> str:

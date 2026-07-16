@@ -17,6 +17,9 @@ class RemotePlanError(ValueError):
     pass
 
 
+RESULT_PROVENANCE_NAME = "vmaf-workflow-provenance.json"
+
+
 @dataclass(frozen=True)
 class PlannedCommand:
     distorted: dict[str, Any]
@@ -76,6 +79,7 @@ def write_remote_plan(
         "easyvmaf_executable": executable,
         "package_archive": package_archive,
         "result_archive": result_archive,
+        "result_provenance": RESULT_PROVENANCE_NAME,
         "environment_preflight_argument": "--environment-only",
         "preflight_argument": "--preflight-only",
         "requirements": {
@@ -102,6 +106,7 @@ def write_remote_plan(
         project.video_dir.name,
         package_archive,
         result_archive,
+        RESULT_PROVENANCE_NAME,
         commands,
         settings,
     )
@@ -319,6 +324,7 @@ def _write_script(
     archive_root: str,
     package_archive: str,
     result_archive: str,
+    result_provenance: str,
     commands: list[PlannedCommand],
     settings: EasyVmafSettings,
 ) -> None:
@@ -367,6 +373,7 @@ def _write_script(
         f"EASYVMAF_REQUIRED_BRANCH={_shell_quote(settings.required_branch)}",
         f"PACKAGE_ARCHIVE={_shell_quote(package_archive)}",
         f"RESULT_ARCHIVE={_shell_quote(result_archive)}",
+        f"PROVENANCE_FILE={_shell_quote(result_provenance)}",
         'MODE=${1:-run}',
         "",
         (
@@ -429,6 +436,10 @@ def _write_script(
             '|| die "package archive is missing: $PACKAGE_ARCHIVE"'
         ),
         (
+            '[[ -f "$PROVENANCE_FILE" ]] '
+            '|| die "result provenance is missing: $PROVENANCE_FILE"'
+        ),
+        (
             'tar -tf "$PACKAGE_ARCHIVE" >/dev/null '
             '|| die "package archive is not a readable tar file: $PACKAGE_ARCHIVE"'
         ),
@@ -475,6 +486,7 @@ def _write_script(
                 + " ".join(
                     _shell_quote(command.expected_result) for command in commands
                 )
+                + ' "$PROVENANCE_FILE"'
             ),
             (
                 'tar -tzf "$RESULT_ARCHIVE" >/dev/null '

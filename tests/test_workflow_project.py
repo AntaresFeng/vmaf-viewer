@@ -184,6 +184,9 @@ def test_workflow_project_paths_and_write_text_create_parent_dirs(
     )
     assert project.manifest_path == project.workflow_dir / "manifest.json"
     assert project.remote_state_path == project.workflow_dir / "remote-state.json"
+    assert project.remote_provenance_path == (
+        project.workflow_dir / "remote-provenance.json"
+    )
     assert project.remote_upload_log_path == (
         project.workflow_dir / "remote-upload.log"
     )

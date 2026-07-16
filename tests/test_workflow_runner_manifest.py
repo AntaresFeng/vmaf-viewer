@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -96,8 +95,20 @@ def test_subprocess_runner_streams_stdout_and_writes_log(
 ) -> None:
     calls = []
 
+    class AvailableStdout:
+        def __init__(self) -> None:
+            self.chunks = [b"first\r", b"second\n", b""]
+            self.read1_calls = 0
+
+        def read1(self, _size):
+            self.read1_calls += 1
+            return self.chunks.pop(0)
+
+        def read(self, _size):
+            raise AssertionError("streaming must not wait on buffered text read")
+
     class FakeProcess:
-        stdout = StringIO("first\rsecond\n")
+        stdout = AvailableStdout()
 
         def wait(self, timeout=None):
             assert timeout is None
@@ -125,13 +136,12 @@ def test_subprocess_runner_streams_stdout_and_writes_log(
             {
                 "stdout": -1,
                 "stderr": -2,
-                "text": True,
-                "encoding": "utf-8",
-                "errors": "replace",
+                "text": False,
                 "shell": False,
             },
         )
     ]
+    assert FakeProcess.stdout.read1_calls == 3
 
 
 def test_subprocess_runner_terminates_streaming_process_on_interrupt(
@@ -139,7 +149,7 @@ def test_subprocess_runner_terminates_streaming_process_on_interrupt(
     monkeypatch,
 ) -> None:
     class InterruptingStdout:
-        def read(self, _size):
+        def read1(self, _size):
             raise KeyboardInterrupt
 
     class FakeProcess:

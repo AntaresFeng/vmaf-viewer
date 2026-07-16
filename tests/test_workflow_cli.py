@@ -517,6 +517,35 @@ def test_run_maps_interrupt_to_exit_code_130(
     assert "interrupted" in captured.err
 
 
+@pytest.mark.parametrize(
+    ("command", "target"),
+    [
+        ("upload", "vmaf_workflow.cli.upload_project"),
+        ("fetch-results", "vmaf_workflow.cli.fetch_results"),
+    ],
+)
+def test_upload_and_fetch_map_interrupt_to_exit_code_130(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    command: str,
+    target: str,
+) -> None:
+    monkeypatch.setattr(
+        target,
+        lambda *_args: (_ for _ in ()).throw(RemoteRunInterrupted()),
+    )
+
+    result = main(
+        [command, "--project-dir", str(tmp_path / "video0")],
+        runner=object(),
+    )
+
+    captured = capsys.readouterr()
+    assert result == 130
+    assert "interrupted" in captured.err
+
+
 def test_remote_plan_requires_inventory_and_package_manifest(
     tmp_path: Path, capsys
 ) -> None:
@@ -647,6 +676,10 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert remote_plan["easyvmaf_repo"] == "/opt/easy Vmaf"
     assert remote_plan["package_archive"] == "video0-inputs.tar"
     assert remote_plan["result_archive"] == "video0-json.tar.gz"
+    assert (
+        remote_plan["result_provenance"]
+        == "vmaf-workflow-provenance.json"
+    )
     assert remote_plan["environment_preflight_argument"] == "--environment-only"
     assert remote_plan["preflight_argument"] == "--preflight-only"
     assert remote_plan["requirements"] == {
@@ -710,10 +743,13 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert "if [[ $MODE == --environment-only ]]" in script
     assert 'info "environment preflight complete"' in script
     assert '[[ -f "$PACKAGE_ARCHIVE" ]]' in script
+    assert '[[ -f "$PROVENANCE_FILE" ]]' in script
     assert 'tar -tf "$PACKAGE_ARCHIVE"' in script
     assert "if [[ $MODE == --preflight-only ]]" in script
     assert 'info "preflight complete"' in script
     assert 'tar -xf "$PACKAGE_ARCHIVE"' in script
+    assert "vmaf-workflow-provenance.json" in script
+    assert '"$PROVENANCE_FILE"' in script
     assert script.index("if [[ $MODE == --environment-only ]]") < script.index(
         '[[ -f "$PACKAGE_ARCHIVE" ]]'
     )

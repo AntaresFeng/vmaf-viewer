@@ -67,6 +67,10 @@ class WorkflowProject:
         return self.workflow_dir / "remote-state.json"
 
     @property
+    def remote_provenance_path(self) -> Path:
+        return self.workflow_dir / "remote-provenance.json"
+
+    @property
     def remote_upload_log_path(self) -> Path:
         return self.workflow_dir / "remote-upload.log"
 

@@ -131,6 +131,9 @@ def _upload(args: argparse.Namespace, runner) -> int:
     except (RemoteWorkflowError, RemoteTargetError) as exc:
         print(f"vmaf-workflow upload: {exc}", file=sys.stderr)
         return 2
+    except RemoteRunInterrupted:
+        print("vmaf-workflow upload: interrupted", file=sys.stderr)
+        return 130
     except RemoteCommandError as exc:
         print(f"vmaf-workflow upload: {exc}", file=sys.stderr)
         return 1
@@ -169,6 +172,9 @@ def _fetch_results(args: argparse.Namespace, runner) -> int:
     except (RemoteWorkflowError, RemoteTargetError) as exc:
         print(f"vmaf-workflow fetch-results: {exc}", file=sys.stderr)
         return 2
+    except RemoteRunInterrupted:
+        print("vmaf-workflow fetch-results: interrupted", file=sys.stderr)
+        return 130
     except RemoteCommandError as exc:
         print(f"vmaf-workflow fetch-results: {exc}", file=sys.stderr)
         return 1

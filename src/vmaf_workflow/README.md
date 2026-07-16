@@ -88,7 +88,9 @@ uv run vmaf-workflow upload --project-dir videos/video10
 ```
 
 默认目标来自 `RemoteSettings`：SSH 主机别名 `3080`，远端目录
-`/home/fzx/vmaf_compare`。只在 upload 阶段允许覆盖并固化到
+`/home/fzx/vmaf_compare`。该目录是基目录；实际执行目录为
+`<base>/<videoN>/<remote-plan-sha256>/`，不同项目和不同计划不会共享
+脚本、输入包或结果包。只在 upload 阶段允许覆盖基目录并固化到
 `remote-state.json`：
 
 ```bash
@@ -100,7 +102,8 @@ uv run vmaf-workflow upload \
 
 upload 先上传小脚本并运行 `--environment-only`，确认 FFmpeg、libvmaf、
 easyVmaf 和 Git 分支正确后才上传大输入包；上传完成后再执行完整预检。
-本地和远端 SHA-256 一致时跳过重复传输。
+本地和远端 SHA-256 一致时跳过重复传输。upload 还会生成并上传
+`remote-provenance.json`，绑定当前 plan、package 和 script 的 SHA-256。
 
 前台执行远端 VMAF：
 
@@ -109,7 +112,8 @@ uv run vmaf-workflow run --project-dir videos/video10
 ```
 
 输出会实时显示并写入 `.workflow/remote-run.log`。脚本会解包输入、逐个
-调用 easyVmaf、验证每个预期 JSON，并生成 `video10-json.tar.gz`。
+调用 easyVmaf、验证每个预期 JSON，并生成 `video10-json.tar.gz`。run
+开始 preflight 前会重新核对远端 script、package 和 provenance 哈希。
 
 拉回、验证并自动安装结果：
 
@@ -118,8 +122,10 @@ uv run vmaf-workflow fetch-results --project-dir videos/video10
 ```
 
 fetch 会核对远端和本地 SHA-256、精确归档成员、普通文件类型和 JSON
-可解析性。验证完成后，归档保存到 `.workflow`，JSON 安装到 `video10`。
-它也可以接管手工运行后遗留的、但能通过当前计划校验的远端结果。
+可解析性，并要求归档内 provenance 与当前 plan/package 完全一致。
+验证完成后，归档保存到 `.workflow`，JSON 事务性安装到 `video10`；
+任一文件替换失败会恢复全部旧结果。它也可以接管手工运行后遗留的、
+但带有当前 provenance 的远端结果。
 
 打开 viewer：
 
@@ -161,6 +167,7 @@ YouTube 下载逻辑：
   remote-plan.json
   remote-plan.sh
   remote-state.json
+  remote-provenance.json
   remote-upload.log
   remote-run.log
   remote-fetch.log
@@ -193,9 +200,15 @@ uv run vmaf-workflow download \
 
 - `upload`、`run`、`fetch-results` 通过 `.workflow/remote-state.json` 传递
   主机、目录、哈希和阶段状态。
+- upload 配置的是远端基目录，state 另行记录按项目和 plan SHA-256 派生
+  的实际执行目录。
 - `run` 和 `fetch-results` 不接受主机覆盖；目标只能由 upload 固化。
 - `remote-plan.json` 变化后必须重新 upload，避免运行或拉回过期计划。
-- `run` 是前台流式命令，Ctrl+C 会把状态记录为 `interrupted`。
+- `upload`、`run`、`fetch-results` 遇到 Ctrl+C 都会把状态记录为
+  `interrupted`，并清理已知的临时传输文件。
+- 旧版本 plan/script 不会生成 provenance；升级后必须先重新
+  `remote-plan`，再重新 `upload`。
+- 旧结果归档没有 provenance，不能再由 fetch 接管，必须重新 run。
 - fetch 只替换计划内的 JSON，不删除项目目录中的其他 JSON。
 - `remote-plan.sh` 是可审核脚本；运行前可以先打开查看。
 - `remote-plan.sh --environment-only` 不检查输入包，用于大文件上传前验证环境。
@@ -214,6 +227,10 @@ uv run vmaf-workflow download \
 - 远端预检提示 FFmpeg 版本过低或缺少 `libvmaf`：修正 3080 非交互 Bash 环境后重新预检。
 - 远端预检提示 easyVmaf 分支不匹配：手动确认仓库状态并切换到配置要求的分支，脚本不会自动切换。
 - `run` 或 `fetch-results` 提示 remote plan changed：重新运行 `upload`。
+- `run` 提示远端 SHA-256 不匹配：远端脚本、输入包或 provenance 被修改，
+  重新运行 `upload`。
+- `fetch-results` 提示 provenance 缺失或不匹配：结果不是由当前
+  plan/package 生成，重新运行 `run`。
 - `fetch-results` 提示归档成员不匹配：保留远端文件排查，现有本地结果不会被替换。
 - `prepare` 报 reference destination already exists：项目目录里已有同名文件，手动改名或直接指定目录内那个参考文件。
 - viewer 没有看到结果：确认 `videoN-json.tar.gz` 是用 `tar -xzf ... -C videos` 解压，JSON 应该进入 `videos/videoN/`。
