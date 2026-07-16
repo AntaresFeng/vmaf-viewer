@@ -72,6 +72,8 @@ class EasyVmafSettings:
     output_fmt: str = "json"
     endsync: bool = True
     threads: int | None = None
+    ffmpeg_min_major: int = 5
+    required_branch: str = "master"
 
     def executable_path(self) -> Path:
         if self._is_windows_repo_dir():
@@ -85,6 +87,8 @@ class EasyVmafSettings:
             output_fmt=self.output_fmt,
             endsync=self.endsync,
             threads=self.threads,
+            ffmpeg_min_major=self.ffmpeg_min_major,
+            required_branch=self.required_branch,
         )
 
     def _is_windows_repo_dir(self) -> bool:

@@ -93,10 +93,18 @@ scp videos/video10/.workflow/remote-plan.sh 3080:~/vmaf_compare/
 ```bash
 ssh 3080
 cd ~/vmaf_compare
+bash remote-plan.sh --preflight-only
 bash remote-plan.sh
 ```
 
-脚本会解包 `video10-inputs.tar`，逐个 distorted 文件调用 easyVmaf，然后打包结果：
+预检会确认 `tar`、`ffmpeg`、`ffprobe`、easyVmaf 可用，检查 FFmpeg/FFprobe
+最低主版本、FFmpeg 的 `libvmaf` 过滤器、easyVmaf 仓库分支与提交号和输入
+tar 可读性。easyVmaf 默认必须位于 `master` 分支；分支不匹配或 detached
+HEAD 时预检立即失败。脚本使用远端非交互 Bash 已提供的 `PATH` 和
+`LD_LIBRARY_PATH`，不会写死 FFmpeg 安装路径。
+
+正式执行时，脚本会解包 `video10-inputs.tar`，逐个 distorted 文件调用
+easyVmaf，确认每个预期 JSON 已生成且非空，然后只打包计划中列出的结果：
 
 ```text
 video10-json.tar.gz
@@ -177,11 +185,18 @@ uv run vmaf-workflow download \
 - 已自动化：下载、参考视频登记、媒体清单、输入打包、远端执行脚本生成。
 - 尚未自动化：scp 上传、ssh 执行、结果拉回、结果完整性检查。
 - `remote-plan.sh` 是可审核脚本；运行前可以先打开查看。
+- `remote-plan.sh --preflight-only` 只检查远端环境和输入包，不解包、不运行 VMAF。
+- FFmpeg/FFprobe 最低主版本在 `EasyVmafSettings.ffmpeg_min_major` 中配置，默认是 5。
+- easyVmaf 期望分支在 `EasyVmafSettings.required_branch` 中配置，默认是 `master`。
+- 远端非交互 SSH 环境必须自行提供正确的 `PATH` 和动态库搜索路径。
 - `ffprobe` 缺失或探测失败不会阻塞 `prepare`，但 4K/HD 模型选择会更多依赖文件名中的 `4K` 或 `2160p`。
 
 ## 常见错误
 
 - `package` 报 `media-inventory.json is required`：先运行 `prepare`。
 - `remote-plan` 报 `package-manifest.json is required`：先运行 `package`。
+- `remote-plan` 提示 package manifest 与 inventory 不一致：媒体清单在打包后发生变化，重新运行 `package`。
+- 远端预检提示 FFmpeg 版本过低或缺少 `libvmaf`：修正 3080 非交互 Bash 环境后重新预检。
+- 远端预检提示 easyVmaf 分支不匹配：手动确认仓库状态并切换到配置要求的分支，脚本不会自动切换。
 - `prepare` 报 reference destination already exists：项目目录里已有同名文件，手动改名或直接指定目录内那个参考文件。
 - viewer 没有看到结果：确认 `videoN-json.tar.gz` 是用 `tar -xzf ... -C videos` 解压，JSON 应该进入 `videos/videoN/`。

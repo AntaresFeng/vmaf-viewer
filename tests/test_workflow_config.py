@@ -43,6 +43,8 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
     assert settings.easyvmaf.output_fmt == "json"
     assert settings.easyvmaf.endsync is True
     assert settings.easyvmaf.threads is None
+    assert settings.easyvmaf.ffmpeg_min_major == 5
+    assert settings.easyvmaf.required_branch == "master"
     assert YTDLP_FORMAT_SELECTOR == "all[height>=1080][vcodec!=none][acodec=none]"
 
 
@@ -52,9 +54,12 @@ def test_easyvmaf_settings_infers_remote_executable_from_repo_shape():
     assert settings.executable_path().as_posix() == (
         "/home/fzx/easyVmaf/.venv/bin/easyvmaf"
     )
-    assert settings.with_repo_dir(Path(r"C:\easyVmaf")).executable_path() == (
+    windows_settings = settings.with_repo_dir(Path(r"C:\easyVmaf"))
+    assert windows_settings.executable_path() == (
         Path(r"C:\easyVmaf\.venv\Scripts\easyvmaf.exe")
     )
+    assert windows_settings.ffmpeg_min_major == settings.ffmpeg_min_major
+    assert windows_settings.required_branch == settings.required_branch
 
 
 def test_quality_labels_use_exact_order_and_define_1080_fallback():

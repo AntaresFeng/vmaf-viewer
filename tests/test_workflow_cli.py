@@ -459,10 +459,33 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
             {
                 "archive_path": str(workflow_dir / "video0-inputs.tar"),
                 "archive_root": "video0",
+                "media_files": [
+                    {
+                        "path": "ref movie.mp4",
+                        "role": "reference",
+                        "size_bytes": 10,
+                    },
+                    {
+                        "path": "普通 1080.mp4",
+                        "role": "distorted",
+                        "size_bytes": 20,
+                    },
+                    {
+                        "path": "clip-1600.mp4",
+                        "role": "distorted",
+                        "size_bytes": 30,
+                    },
+                    {
+                        "path": "clip-2160p.webm",
+                        "role": "distorted",
+                        "size_bytes": 40,
+                    },
+                ],
             }
         ),
         encoding="utf-8",
     )
+    (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
     (workflow_dir / "manifest.json").write_text(
         json.dumps({"keep": "existing"}),
         encoding="utf-8",
@@ -491,6 +514,16 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert remote_plan["easyvmaf_repo"] == "/opt/easy Vmaf"
     assert remote_plan["package_archive"] == "video0-inputs.tar"
     assert remote_plan["result_archive"] == "video0-json.tar.gz"
+    assert remote_plan["preflight_argument"] == "--preflight-only"
+    assert remote_plan["requirements"] == {
+        "ffmpeg": {"minimum_major": 5, "required_filter": "libvmaf"},
+        "ffprobe": {"minimum_major": 5},
+        "easyvmaf": {
+            "repo": "/opt/easy Vmaf",
+            "executable": "/opt/easy Vmaf/.venv/bin/easyvmaf",
+            "required_branch": "master",
+        },
+    }
     assert remote_plan["reference"]["path"] == "ref movie.mp4"
     assert [command["model"] for command in remote_plan["commands"]] == [
         "HD",
@@ -503,19 +536,61 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
         "clip-2160p.webm",
     ]
     assert any("resolution differs" in warning for warning in remote_plan["warnings"])
+    assert remote_plan["expected_results"] == [
+        "video0/普通 1080_vmaf.json",
+        "video0/clip-1600_vmaf.json",
+        "video0/clip-2160p_vmaf.json",
+    ]
+    assert [
+        command["expected_result"] for command in remote_plan["commands"]
+    ] == remote_plan["expected_results"]
 
     script = remote_script_path.read_text(encoding="utf-8")
     script_bytes = remote_script_path.read_bytes()
     assert b"\r\n" not in script_bytes
     assert script_bytes.startswith(b"#!/usr/bin/env bash\nset -euo pipefail\n")
     assert "set -euo pipefail" in script
-    assert "tar -xf video0-inputs.tar" in script
-    assert script.count("/opt/easy Vmaf/.venv/bin/easyvmaf") == 3
+    assert "export PATH=" not in script
+    assert "export LD_LIBRARY_PATH=" not in script
+    assert "require_command ffmpeg" in script
+    assert "require_command ffprobe" in script
+    assert "require_command git" in script
+    assert "check_version ffmpeg 5" in script
+    assert "check_version ffprobe 5" in script
+    assert "ffmpeg -hide_banner -h filter=libvmaf" in script
+    assert "EASYVMAF_REPO='/opt/easy Vmaf'" in script
+    assert "EASYVMAF_EXECUTABLE='/opt/easy Vmaf/.venv/bin/easyvmaf'" in script
+    assert "EASYVMAF_REQUIRED_BRANCH=master" in script
+    assert 'MODE=${1:-run}' in script
+    assert 'usage: $0 [--preflight-only]' in script
+    assert '"$EASYVMAF_EXECUTABLE" --help' in script
+    assert (
+        'git -C "$EASYVMAF_REPO" symbolic-ref --quiet --short HEAD'
+        in script
+    )
+    assert "easyVmaf repository is in detached HEAD state" in script
+    assert "easyVmaf branch mismatch: expected" in script
+    assert 'info "easyVmaf branch: $easyvmaf_branch"' in script
+    assert 'git -C "$EASYVMAF_REPO" rev-parse --short HEAD' in script
+    assert '[[ -f "$PACKAGE_ARCHIVE" ]]' in script
+    assert 'tar -tf "$PACKAGE_ARCHIVE"' in script
+    assert "if [[ $MODE == --preflight-only ]]" in script
+    assert 'info "preflight complete"' in script
+    assert 'tar -xf "$PACKAGE_ARCHIVE"' in script
+    assert script.count('"$EASYVMAF_EXECUTABLE" -d ') == 3
     assert "-d 'video0/ref movie.mp4'" not in script
     assert "-d 'video0/普通 1080.mp4' -r 'video0/ref movie.mp4'" in script
     assert "-model HD" in script
     assert "-model 4K" in script
-    assert "tar -czf video0-json.tar.gz video0/*.json" in script
+    assert "[[ -f 'video0/ref movie.mp4' ]]" in script
+    assert "rm -f -- 'video0/普通 1080_vmaf.json'" in script
+    assert "[[ -s 'video0/普通 1080_vmaf.json' ]]" in script
+    assert "video0/*.json" not in script
+    assert (
+        'tar -czf "$RESULT_ARCHIVE" -- \'video0/普通 1080_vmaf.json\' '
+        "video0/clip-1600_vmaf.json video0/clip-2160p_vmaf.json"
+    ) in script
+    assert 'tar -tzf "$RESULT_ARCHIVE"' in script
 
     manifest = json.loads((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["keep"] == "existing"
@@ -542,9 +617,25 @@ def test_remote_plan_includes_configured_easyvmaf_threads(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     (workflow_dir / "package-manifest.json").write_text(
-        json.dumps({"archive_path": str(workflow_dir / "video0-inputs.tar")}),
+        json.dumps(
+            {
+                "archive_path": str(workflow_dir / "video0-inputs.tar"),
+                "archive_root": "video0",
+                "media_files": [
+                    {
+                        "path": "ref.mp4",
+                        "role": "reference",
+                    },
+                    {
+                        "path": "dist.mp4",
+                        "role": "distorted",
+                    },
+                ],
+            }
+        ),
         encoding="utf-8",
     )
+    (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
 
     plan = write_remote_plan(
         WorkflowProject(video_dir=project_dir, workflow_dir=workflow_dir),
@@ -554,6 +645,159 @@ def test_remote_plan_includes_configured_easyvmaf_threads(tmp_path: Path) -> Non
     assert plan["commands"][0]["command"][-2:] == ["-threads", "8"]
     script = (workflow_dir / "remote-plan.sh").read_text(encoding="utf-8")
     assert "-threads 8" in script
+
+
+def test_remote_plan_includes_configured_easyvmaf_branch(tmp_path: Path) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "media-inventory.json").write_text(
+        json.dumps(
+            {
+                "reference": "ref.mp4",
+                "files": [
+                    {"path": "ref.mp4", "role": "reference"},
+                    {"path": "dist.mp4", "role": "distorted"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "package-manifest.json").write_text(
+        json.dumps(
+            {
+                "archive_path": str(workflow_dir / "video0-inputs.tar"),
+                "archive_root": "video0",
+                "media_files": [
+                    {"path": "ref.mp4", "role": "reference"},
+                    {"path": "dist.mp4", "role": "distorted"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+
+    plan = write_remote_plan(
+        WorkflowProject(video_dir=project_dir, workflow_dir=workflow_dir),
+        EasyVmafSettings(
+            repo_dir=Path("/opt/easyVmaf"),
+            required_branch="release",
+        ),
+    )
+
+    assert plan["requirements"]["easyvmaf"]["required_branch"] == "release"
+    script = (workflow_dir / "remote-plan.sh").read_text(encoding="utf-8")
+    assert "EASYVMAF_REQUIRED_BRANCH=release" in script
+
+
+def test_remote_plan_rejects_package_manifest_that_does_not_match_inventory(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "media-inventory.json").write_text(
+        json.dumps(
+            {
+                "reference": "ref.mp4",
+                "files": [
+                    {"path": "ref.mp4", "role": "reference", "size_bytes": 10},
+                    {"path": "dist.mp4", "role": "distorted", "size_bytes": 20},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "package-manifest.json").write_text(
+        json.dumps(
+            {
+                "archive_path": str(workflow_dir / "video0-inputs.tar"),
+                "archive_root": "video0",
+                "media_files": [
+                    {"path": "ref.mp4", "role": "reference", "size_bytes": 10},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+
+    result = main(["remote-plan", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "rerun package" in captured.err
+
+
+def test_remote_plan_rejects_empty_distorted_set(tmp_path: Path, capsys) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "media-inventory.json").write_text(
+        json.dumps(
+            {
+                "reference": "ref.mp4",
+                "files": [
+                    {"path": "ref.mp4", "role": "reference", "size_bytes": 10},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "package-manifest.json").write_text(
+        json.dumps(
+            {
+                "archive_path": str(workflow_dir / "video0-inputs.tar"),
+                "archive_root": "video0",
+                "media_files": [
+                    {"path": "ref.mp4", "role": "reference", "size_bytes": 10},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+
+    result = main(["remote-plan", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "at least one distorted" in captured.err
+
+
+def test_remote_plan_rejects_colliding_result_paths(tmp_path: Path, capsys) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    files = [
+        {"path": "ref.mp4", "role": "reference"},
+        {"path": "same.mp4", "role": "distorted"},
+        {"path": "same.webm", "role": "distorted"},
+    ]
+    (workflow_dir / "media-inventory.json").write_text(
+        json.dumps({"reference": "ref.mp4", "files": files}),
+        encoding="utf-8",
+    )
+    (workflow_dir / "package-manifest.json").write_text(
+        json.dumps(
+            {
+                "archive_path": str(workflow_dir / "video0-inputs.tar"),
+                "archive_root": "video0",
+                "media_files": files,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+
+    result = main(["remote-plan", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "same_vmaf.json" in captured.err
+    assert "collision" in captured.err
 
 
 def test_download_help_includes_project_dir(capsys) -> None:
