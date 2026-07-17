@@ -21,6 +21,13 @@ from vmaf_workflow.cleanup import (
     cleanup_project,
 )
 from vmaf_workflow.config import default_settings
+from vmaf_workflow.download_state import (
+    DownloadStateError,
+    invalidate_downstream,
+    load_download_manifest,
+    merge_download_manifest,
+    validate_source_identity,
+)
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult, DownloadDecision, Manifest
 from vmaf_workflow.packager import PackageError, package_project
@@ -307,24 +314,53 @@ def _download(args: argparse.Namespace, runner) -> int:
 
     settings = replace(default_settings(), videos_dir=args.videos_dir)
 
+    explicit_project = (
+        _explicit_project(args.project_dir) if args.project_dir is not None else None
+    )
+    reuse_project = args.project_dir is not None and args.project_dir.exists()
+
     try:
         bvid = normalize_bvid(args.bvid) if args.bvid else None
         youtube_url = normalize_youtube_url(args.ytid) if args.ytid else None
-    except ValueError as exc:
+        existing_manifest = (
+            load_download_manifest(explicit_project.manifest_path)
+            if explicit_project is not None
+            else None
+        )
+        validate_source_identity(existing_manifest, bvid, youtube_url)
+    except (ValueError, DownloadStateError) as exc:
         print(f"vmaf-workflow download: {exc}", file=sys.stderr)
         return 2
+
+    if args.dry_run and existing_manifest is not None:
+        return 0
 
     project = create_project(settings.videos_dir, project_dir=args.project_dir)
 
     write_text(project.bbdown_config_path, bbdown_config_text(project, settings.bbdown))
     write_text(project.ytdlp_config_path, ytdlp_config_text(project, settings.ytdlp))
-    if args.dry_run:
-        write_manifest(
-            project.manifest_path, _base_manifest(project, bvid, youtube_url, True)
+    current_manifest = _base_manifest(project, bvid, youtube_url, args.dry_run)
+    try:
+        manifest = merge_download_manifest(
+            existing_manifest,
+            current_manifest,
+            update_bilibili=bvid is not None,
+            update_youtube=youtube_url is not None,
         )
+    except DownloadStateError as exc:
+        print(f"vmaf-workflow download: {exc}", file=sys.stderr)
+        return 2
+    if args.dry_run:
+        write_manifest(project.manifest_path, manifest)
         return 0
 
-    manifest = _base_manifest(project, bvid, youtube_url, False)
+    if reuse_project:
+        try:
+            invalidate_downstream(project, manifest)
+        except DownloadStateError as exc:
+            print(f"vmaf-workflow download: {exc}", file=sys.stderr)
+            return 2
+        write_manifest(project.manifest_path, manifest)
     exit_code = _run_downloads(project, settings, bvid, youtube_url, runner, manifest)
     write_manifest(project.manifest_path, manifest)
     return exit_code

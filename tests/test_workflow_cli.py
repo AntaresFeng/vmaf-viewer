@@ -1204,6 +1204,11 @@ class FakeRunner:
         return CommandResult(tuple(argv), 0, "", "", stdin)
 
 
+class FailIfCalledRunner:
+    def run(self, argv, stdin=None):
+        raise AssertionError(f"runner must not be called: {argv}")
+
+
 def test_download_uses_runner_for_bilibili_and_youtube(tmp_path: Path) -> None:
     runner = FakeRunner()
 
@@ -1235,6 +1240,250 @@ def test_download_uses_runner_for_bilibili_and_youtube(tmp_path: Path) -> None:
     assert manifest["youtube"]["download_plan"][0]["format_id"] == "299"
     assert manifest["youtube"]["download_plan"][0]["bitrate_kbps"] == 5325.871
     assert len(manifest["commands"]) >= 4
+
+
+def test_incremental_download_preserves_other_source_and_command_history(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+
+    first_result = main(
+        [
+            "download",
+            "--videos-dir",
+            str(tmp_path),
+            "--bvid",
+            "BV1xx411c7mD",
+        ],
+        runner=runner,
+    )
+    project_dir = tmp_path / "video0"
+    manifest_path = project_dir / ".workflow" / "manifest.json"
+    first_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    second_result = main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--ytid",
+            "dQw4w9WgXcQ",
+        ],
+        runner=runner,
+    )
+    merged = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert first_result == 0
+    assert second_result == 0
+    assert merged["bilibili"] == first_manifest["bilibili"]
+    assert merged["youtube"]["url"] == (
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    )
+    assert merged["youtube"]["downloads"]
+    assert merged["commands"][: len(first_manifest["commands"])] == (
+        first_manifest["commands"]
+    )
+    assert len(merged["commands"]) > len(first_manifest["commands"])
+    assert merged["created_at"] == first_manifest["created_at"]
+    assert "updated_at" in merged
+
+
+@pytest.mark.parametrize(
+    ("flag", "value", "message"),
+    [
+        ("--bvid", "BV1Q541167Qg", "BVID"),
+        ("--ytid", "9bZkp7q19f0", "YouTube"),
+    ],
+)
+def test_incremental_download_rejects_conflicting_source_atomically(
+    tmp_path: Path,
+    capsys,
+    flag: str,
+    value: str,
+    message: str,
+) -> None:
+    project_dir = tmp_path / "video0"
+    assert main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--bvid",
+            "BV1xx411c7mD",
+            "--ytid",
+            "dQw4w9WgXcQ",
+            "--dry-run",
+        ]
+    ) == 0
+    before = _project_file_bytes(project_dir)
+
+    result = main(
+        ["download", "--project-dir", str(project_dir), flag, value],
+        runner=FailIfCalledRunner(),
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert message in captured.err
+    assert _project_file_bytes(project_dir) == before
+
+
+def test_incremental_download_invalidates_managed_downstream_state(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    managed = [
+        workflow_dir / "media-inventory.json",
+        workflow_dir / "package-manifest.json",
+        workflow_dir / "video0-inputs.tar",
+        workflow_dir / "remote-plan.json",
+        workflow_dir / "remote-plan.sh",
+        workflow_dir / "remote-state.json",
+        workflow_dir / "remote-provenance.json",
+        workflow_dir / "video0-json.tar.gz",
+    ]
+    for path in managed:
+        path.write_bytes(b"stale")
+    media = project_dir / "existing.mp4"
+    result_json = project_dir / "existing_vmaf.json"
+    log = workflow_dir / "remote-run.log"
+    custom_package = tmp_path / "custom-inputs.tar"
+    media.write_bytes(b"media")
+    result_json.write_text("{}\n", encoding="utf-8")
+    log.write_text("log\n", encoding="utf-8")
+    custom_package.write_bytes(b"custom")
+    manifest_path = workflow_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update(
+        {
+            "reference": {"path": media.name},
+            "media_inventory": str(managed[0]),
+            "package": {"path": str(custom_package)},
+            "remote_plan": {"manifest": str(managed[3])},
+            "results": {"files": [str(result_json)]},
+            "keep": "value",
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--ytid",
+            "dQw4w9WgXcQ",
+        ],
+        runner=runner,
+    )
+    merged = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert result == 0
+    assert all(not path.exists() for path in managed)
+    assert media.is_file()
+    assert result_json.is_file()
+    assert log.is_file()
+    assert custom_package.is_file()
+    assert merged["keep"] == "value"
+    for key in ("reference", "media_inventory", "package", "remote_plan", "results"):
+        assert key not in merged
+
+
+def test_failed_incremental_download_keeps_downstream_invalid(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    inventory = workflow_dir / "media-inventory.json"
+    remote_state = workflow_dir / "remote-state.json"
+    inventory.write_text("{}", encoding="utf-8")
+    remote_state.write_text("{}", encoding="utf-8")
+
+    result = main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--ytid",
+            "dQw4w9WgXcQ",
+        ],
+        runner=InvalidYtDlpJsonRunner(),
+    )
+
+    assert result == 1
+    assert not inventory.exists()
+    assert not remote_state.exists()
+
+
+def test_incremental_download_same_source_replaces_latest_snapshot(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
+    project_dir = tmp_path / "video0"
+    manifest_path = project_dir / ".workflow" / "manifest.json"
+    first = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--bvid",
+            "BV1xx411c7mD",
+        ],
+        runner=runner,
+    ) == 0
+    second = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert len(second["bilibili"]["downloads"]) == len(
+        first["bilibili"]["downloads"]
+    )
+    assert len(second["commands"]) == 2 * len(first["commands"])
+    assert second["created_at"] == first["created_at"]
+    assert "updated_at" in second
+
+
+def test_existing_manifest_dry_run_is_read_only(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    (workflow_dir / "media-inventory.json").write_text("{}", encoding="utf-8")
+    (workflow_dir / "remote-state.json").write_text("{}", encoding="utf-8")
+    before = _project_file_bytes(project_dir)
+
+    result = main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--ytid",
+            "dQw4w9WgXcQ",
+            "--dry-run",
+        ],
+        runner=FailIfCalledRunner(),
+    )
+
+    assert result == 0
+    assert _project_file_bytes(project_dir) == before
 
 
 class InvalidYtDlpJsonRunner:
@@ -1403,3 +1652,11 @@ def _write_after_video_metadata(argv, payload: str) -> None:
             Path(line.removeprefix(prefix)).write_text(payload, encoding="utf-8")
             return
     raise AssertionError("yt-dlp config did not include after_video metadata path")
+
+
+def _project_file_bytes(project_dir: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(project_dir).as_posix(): path.read_bytes()
+        for path in project_dir.rglob("*")
+        if path.is_file()
+    }
