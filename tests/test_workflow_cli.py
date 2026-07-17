@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from vmaf_workflow.cleanup import CleanupExecutionError, CleanupStateError
 from vmaf_workflow.cli import main
 from vmaf_workflow.config import EasyVmafSettings, RemoteSettings
 from vmaf_workflow.models import CommandResult
@@ -389,13 +390,85 @@ def test_remote_plan_requires_project_dir(capsys) -> None:
     assert "--project-dir" in captured.err
 
 
-@pytest.mark.parametrize("command", ["upload", "run", "fetch-results"])
+@pytest.mark.parametrize(
+    "command",
+    ["upload", "run", "fetch-results", "cleanup"],
+)
 def test_remote_commands_require_project_dir(command: str, capsys) -> None:
     result = main([command])
 
     captured = capsys.readouterr()
     assert result == 2
     assert "--project-dir" in captured.err
+
+
+def test_cleanup_dispatches_project_and_prints_reclaimed_bytes(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    calls = []
+    project_dir = tmp_path / "video0"
+
+    def fake_cleanup(project):
+        calls.append(project)
+        return {
+            "cleanup": {
+                "status": "completed",
+                "last_reclaimed_bytes": 20,
+                "archives": {
+                    "package": {"size_bytes": 100},
+                    "result": {"size_bytes": 20},
+                },
+            }
+        }
+
+    monkeypatch.setattr("vmaf_workflow.cli.cleanup_project", fake_cleanup)
+
+    result = main(["cleanup", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert calls[0].video_dir == project_dir
+    assert captured.out == "cleanup completed: 20 bytes reclaimed\n"
+
+
+def test_cleanup_maps_state_failure_to_exit_code_2(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "vmaf_workflow.cli.cleanup_project",
+        lambda *_args: (_ for _ in ()).throw(
+            CleanupStateError("fetch-results must be completed")
+        ),
+    )
+
+    result = main(["cleanup", "--project-dir", str(tmp_path / "video0")])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "fetch-results must be completed" in captured.err
+
+
+def test_cleanup_maps_delete_failure_to_exit_code_1(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "vmaf_workflow.cli.cleanup_project",
+        lambda *_args: (_ for _ in ()).throw(
+            CleanupExecutionError("delete-result failed")
+        ),
+    )
+
+    result = main(["cleanup", "--project-dir", str(tmp_path / "video0")])
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "delete-result failed" in captured.err
 
 
 def test_upload_passes_config_defaults_and_cli_target_overrides(

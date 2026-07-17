@@ -15,6 +15,11 @@ from vmaf_workflow.bbdown import (
     find_stream_index,
     parse_bbdown_streams,
 )
+from vmaf_workflow.cleanup import (
+    CleanupExecutionError,
+    CleanupStateError,
+    cleanup_project,
+)
 from vmaf_workflow.config import default_settings
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult, DownloadDecision, Manifest
@@ -68,6 +73,8 @@ def main(argv: Sequence[str] | None = None, runner=None) -> int:
         return _run_remote(args, command_runner)
     if args.command == "fetch-results":
         return _fetch_results(args, command_runner)
+    if args.command == "cleanup":
+        return _cleanup(args)
 
     parser.error("a command is required")
     return 2
@@ -114,7 +121,29 @@ def _build_parser() -> argparse.ArgumentParser:
     fetch_results_parser = subparsers.add_parser("fetch-results")
     fetch_results_parser.add_argument("--project-dir", type=Path)
 
+    cleanup = subparsers.add_parser("cleanup")
+    cleanup.add_argument("--project-dir", type=Path)
+
     return parser
+
+
+def _cleanup(args: argparse.Namespace) -> int:
+    if args.project_dir is None:
+        print("vmaf-workflow cleanup: --project-dir is required", file=sys.stderr)
+        return 2
+    project = _explicit_project(args.project_dir)
+    try:
+        state = cleanup_project(project)
+    except CleanupStateError as exc:
+        print(f"vmaf-workflow cleanup: {exc}", file=sys.stderr)
+        return 2
+    except CleanupExecutionError as exc:
+        print(f"vmaf-workflow cleanup: {exc}", file=sys.stderr)
+        return 1
+
+    reclaimed_bytes = state["cleanup"]["last_reclaimed_bytes"]
+    print(f"cleanup completed: {reclaimed_bytes} bytes reclaimed")
+    return 0
 
 
 def _upload(args: argparse.Namespace, runner) -> int:
