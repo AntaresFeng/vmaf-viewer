@@ -35,6 +35,13 @@ uv run vmaf-workflow download \
   --ytid Xiap0npVRCE
 ```
 
+两个来源可以单独下载；`download` 至少需要其中一个：
+
+```bash
+uv run vmaf-workflow download --bvid BV1i7jc6BEwf
+uv run vmaf-workflow download --ytid Xiap0npVRCE
+```
+
 默认会创建下一个 `videos/videoN`。如果测试或重跑时要复用已有目录，显式指定：
 
 ```bash
@@ -43,6 +50,10 @@ uv run vmaf-workflow download \
   --bvid BV1i7jc6BEwf \
   --ytid Xiap0npVRCE
 ```
+
+`--videos-dir <path>` 可以修改自动创建 `videoN` 的根目录。`--dry-run` 在新项目
+中只生成下载器配置和基础 manifest，不调用下载器；已有 manifest 的项目只校验
+来源 ID，且不修改任何文件。
 
 登记参考视频并生成媒体清单：
 
@@ -184,6 +195,9 @@ run、fetch-results 和 cleanup 在真正执行时完成。工作流尚未完成
 失败时，status 仍返回 0，并建议从最早失效阶段继续；已有 JSON 损坏或项目目录
 不存在时返回 2。
 
+如果目录中的受支持媒体集合与 inventory 不一致，包括手工复制或补下载产生了
+未登记媒体，status 会退回 `downloaded / incomplete` 并建议重新 `prepare`。
+
 如果输入包由 `package --output` 生成，cleanup 按设计不会管理该自定义文件；status
 在结果已 fetched 后会直接建议打开 viewer，而不会建议一个必然失败的 cleanup。
 
@@ -194,6 +208,9 @@ uv run vmaf-viewer --data-dir videos/video10
 ```
 
 ## 下载规则
+
+每个 `videoN` 最多绑定一个 BVID 和一个 YouTube 视频 ID。缺失来源可以稍后补充，
+同一 ID 可以重跑；向已有来源传入不同 ID 会在写文件和调用下载器前返回错误码 2。
 
 B 站下载逻辑：
 
@@ -247,17 +264,35 @@ jq '{upload: .upload.status, run: .run.status, fetch: .fetch.status, cleanup: .c
 
 ## 重跑策略
 
-默认下载会新建下一个 `videos/videoN`。重跑同一个任务时用 `--project-dir`：
+默认下载会新建下一个 `videos/videoN`。向已有项目补充缺失站点时，只传对应来源
+和原项目目录。例如已有 B 站文件后补 YouTube：
 
 ```bash
 uv run vmaf-workflow download \
   --project-dir videos/video10 \
-  --bvid BV1i7jc6BEwf \
   --ytid Xiap0npVRCE
 ```
 
-这样不会创建新目录，并且让 BBDown/yt-dlp 自己跳过已存在的下载文件。除首次
-download 可自动创建目录外，后续所有命令都必须显式传 `--project-dir`。
+反向补充 B 站时只传 `--bvid`。重跑同一来源也使用相同 ID 和 `--project-dir`：
+
+```bash
+uv run vmaf-workflow download \
+  --project-dir videos/video10 \
+  --bvid BV1i7jc6BEwf
+```
+
+增量下载保留未参与本次调用的站点记录，本次站点更新为最新快照，顶层命令历史
+继续追加。不同 BVID 或 YouTube ID 不允许混入同一项目。
+
+任何已接受的非 dry-run 增量下载都会在调用下载器前使旧下游状态失效：删除旧
+inventory、package manifest、默认 inputs tar、remote plan、remote state、
+provenance 和默认结果 tar，并移除主 manifest 中对应指针。媒体、已安装的
+`*_vmaf.json`、日志和自定义位置的 package 保留。即使下载器中途失败，下游状态
+也保持失效，避免部分新文件继续搭配旧 inventory 使用。
+
+因此补下载或重跑完成后必须从 `prepare` 重新开始，再依次执行 `package`、
+`remote-plan` 和 `upload`。除首次 download 可自动创建目录外，后续所有命令都
+必须显式传 `--project-dir`。
 
 cleanup 后的重跑规则：
 
@@ -318,6 +353,8 @@ cleanup 后的重跑规则：
 - `cleanup` 返回 pending 或 staging 文件被锁定：关闭占用文件的程序后，重新
   运行相同 cleanup 命令继续。
 - `prepare` 报 reference destination already exists：项目目录里已有同名文件，手动改名或直接指定目录内那个参考文件。
+- `download` 报 BVID 或 YouTube URL conflicts with existing project source：该
+  `videoN` 已绑定另一个视频；使用原 ID 重跑，或为新视频创建新的项目目录。
 - viewer 没有看到结果：检查 manifest 的 `results.files` 是否存在，并确认 viewer
   的数据目录是对应 `videos/videoN`；cleanup 后结果 tar 不存在是正常状态。
 
