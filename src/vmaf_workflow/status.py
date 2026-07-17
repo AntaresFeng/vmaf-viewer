@@ -275,13 +275,19 @@ def _load_optional_json_object(
 
 
 def _has_media(root: Path) -> bool:
+    return bool(_media_paths(root))
+
+
+def _media_paths(root: Path) -> tuple[Path, ...]:
+    files: list[Path] = []
     for path in root.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in MEDIA_SUFFIXES:
             continue
         relative = path.relative_to(root)
-        if not any(part in EXCLUDED_DIR_NAMES for part in relative.parts[:-1]):
-            return True
-    return False
+        if any(part in EXCLUDED_DIR_NAMES for part in relative.parts[:-1]):
+            continue
+        files.append(path)
+    return tuple(sorted(files, key=lambda path: str(path).lower()))
 
 
 def _inventory_missing_media(
@@ -295,6 +301,7 @@ def _inventory_missing_media(
         )
     roles: list[str] = []
     missing: list[str] = []
+    recorded_paths: set[Path] = set()
     for entry in files:
         if not isinstance(entry, dict):
             raise WorkflowStatusError("media-inventory.json file entry is invalid")
@@ -304,6 +311,7 @@ def _inventory_missing_media(
             raise WorkflowStatusError("media-inventory.json file entry is invalid")
         relative = _safe_relative_path(raw_path, "inventory media path")
         media_path = project.video_dir.joinpath(*relative.parts)
+        recorded_paths.add(media_path)
         if not media_path.is_file():
             missing.append(str(media_path))
         roles.append(role)
@@ -312,6 +320,11 @@ def _inventory_missing_media(
             "media-inventory.json requires one reference and at least one "
             "distorted file"
         )
+    missing.extend(
+        str(path)
+        for path in _media_paths(project.video_dir)
+        if path not in recorded_paths
+    )
     return tuple(missing)
 
 

@@ -79,6 +79,21 @@ def test_status_returns_to_prepare_when_inventory_media_is_missing(
     assert "prepare --project-dir" in status.next_command
 
 
+def test_status_returns_to_prepare_when_media_is_not_in_inventory(
+    tmp_path: Path,
+) -> None:
+    project = _prepared_project(tmp_path)
+    extra_media = project.video_dir / "new-youtube.webm"
+    extra_media.write_bytes(b"new-media")
+
+    status = inspect_workflow_status(project)
+
+    assert status.stage == "downloaded"
+    assert status.state == "incomplete"
+    assert status.missing_artifacts == (str(extra_media),)
+    assert "prepare --project-dir" in status.next_command
+
+
 def test_status_progresses_through_local_planning_stages(tmp_path: Path) -> None:
     project = _prepared_project(tmp_path)
 
