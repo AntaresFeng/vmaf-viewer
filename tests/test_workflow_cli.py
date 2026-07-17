@@ -17,6 +17,7 @@ from vmaf_workflow.remote_workflow import (
     RemoteRunInterrupted,
     RemoteWorkflowError,
 )
+from vmaf_workflow.status import WorkflowStatus
 
 YTDLP_PREFLIGHT_JSON = (
     '{"formats":[{"format_id":"299","format_note":"1080p60",'
@@ -400,6 +401,99 @@ def test_remote_commands_require_project_dir(command: str, capsys) -> None:
     captured = capsys.readouterr()
     assert result == 2
     assert "--project-dir" in captured.err
+
+
+def test_status_requires_project_dir(capsys) -> None:
+    result = main(["status"])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "vmaf-workflow status" in captured.err
+    assert "--project-dir" in captured.err
+
+
+def test_status_renders_stage_missing_artifacts_and_next_command(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    project_dir = tmp_path / "video0"
+    missing = (
+        str(project_dir / ".workflow" / "package-manifest.json"),
+        str(project_dir / ".workflow" / "video0-inputs.tar"),
+    )
+    monkeypatch.setattr(
+        "vmaf_workflow.cli.inspect_workflow_status",
+        lambda project: WorkflowStatus(
+            project=project.video_dir,
+            stage="prepared",
+            state="incomplete",
+            missing_artifacts=missing,
+            next_command=(
+                f"uv run vmaf-workflow package --project-dir {project.video_dir}"
+            ),
+        ),
+    )
+
+    result = main(["status", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert captured.err == ""
+    assert captured.out == (
+        f"project: {project_dir}\n"
+        "stage: prepared\n"
+        "state: incomplete\n"
+        "missing artifacts:\n"
+        f"  - {missing[0]}\n"
+        f"  - {missing[1]}\n"
+        f"next command: uv run vmaf-workflow package --project-dir {project_dir}\n"
+    )
+
+
+def test_status_renders_none_for_no_missing_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    project_dir = tmp_path / "video0"
+    monkeypatch.setattr(
+        "vmaf_workflow.cli.inspect_workflow_status",
+        lambda project: WorkflowStatus(
+            project=project.video_dir,
+            stage="cleaned",
+            state="completed",
+            missing_artifacts=(),
+            next_command=f"uv run vmaf-viewer {project.video_dir}",
+        ),
+    )
+
+    result = main(["status", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert "missing artifacts: none\n" in captured.out
+
+
+def test_status_maps_damaged_json_to_exit_code_2(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    project_dir = tmp_path / "video0"
+    workflow_dir = project_dir / ".workflow"
+    workflow_dir.mkdir(parents=True)
+    (project_dir / "distorted.mp4").write_bytes(b"media")
+    (workflow_dir / "media-inventory.json").write_text(
+        "not-json",
+        encoding="utf-8",
+    )
+
+    result = main(["status", "--project-dir", str(project_dir)])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "vmaf-workflow status" in captured.err
+    assert "media-inventory.json" in captured.err
 
 
 def test_cleanup_dispatches_project_and_prints_reclaimed_bytes(

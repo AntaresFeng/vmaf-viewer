@@ -45,6 +45,7 @@ from vmaf_workflow.project import (
     ytdlp_config_text,
 )
 from vmaf_workflow.runner import SubprocessRunner
+from vmaf_workflow.status import WorkflowStatusError, inspect_workflow_status
 from vmaf_workflow.ytdlp import (
     load_after_video_downloads,
     load_sidecar_downloads,
@@ -75,6 +76,8 @@ def main(argv: Sequence[str] | None = None, runner=None) -> int:
         return _fetch_results(args, command_runner)
     if args.command == "cleanup":
         return _cleanup(args)
+    if args.command == "status":
+        return _status(args)
 
     parser.error("a command is required")
     return 2
@@ -124,7 +127,34 @@ def _build_parser() -> argparse.ArgumentParser:
     cleanup = subparsers.add_parser("cleanup")
     cleanup.add_argument("--project-dir", type=Path)
 
+    status = subparsers.add_parser("status")
+    status.add_argument("--project-dir", type=Path)
+
     return parser
+
+
+def _status(args: argparse.Namespace) -> int:
+    if args.project_dir is None:
+        print("vmaf-workflow status: --project-dir is required", file=sys.stderr)
+        return 2
+    project = _explicit_project(args.project_dir)
+    try:
+        status = inspect_workflow_status(project)
+    except WorkflowStatusError as exc:
+        print(f"vmaf-workflow status: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"project: {status.project}")
+    print(f"stage: {status.stage}")
+    print(f"state: {status.state}")
+    if status.missing_artifacts:
+        print("missing artifacts:")
+        for artifact in status.missing_artifacts:
+            print(f"  - {artifact}")
+    else:
+        print("missing artifacts: none")
+    print(f"next command: {status.next_command}")
+    return 0
 
 
 def _cleanup(args: argparse.Namespace) -> int:

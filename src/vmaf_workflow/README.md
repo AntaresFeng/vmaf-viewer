@@ -161,6 +161,32 @@ upload 和 `fetch-results` 已完成，并在移动任何文件前验证：
 manifest 保留归档路径、大小、SHA-256 与清理时间。已经清理的归档不会重复计入
 本次释放量；cleanup 后重新 fetch 结果，也可以再次 cleanup 只删除新结果包。
 
+任何阶段都可以查看本地工作流状态：
+
+```bash
+uv run vmaf-workflow status --project-dir videos/video10
+```
+
+输出当前阶段、状态、缺失产物和建议执行的下一条命令。例如 cleanup 完成后：
+
+```text
+project: videos/video10
+stage: cleaned
+state: completed
+missing artifacts: none
+next command: uv run vmaf-viewer videos/video10
+```
+
+`status` 是快速只读检查：它读取 manifest、inventory、plan 和
+`remote-state.json`，并检查关键本地文件是否存在；不会连接 SSH、重新计算大型
+归档的 SHA-256 或修改任何状态。严格的内容和哈希校验仍由 package、upload、
+run、fetch-results 和 cleanup 在真正执行时完成。工作流尚未完成或某个远端阶段
+失败时，status 仍返回 0，并建议从最早失效阶段继续；已有 JSON 损坏或项目目录
+不存在时返回 2。
+
+如果输入包由 `package --output` 生成，cleanup 按设计不会管理该自定义文件；status
+在结果已 fetched 后会直接建议打开 viewer，而不会建议一个必然失败的 cleanup。
+
 打开 viewer：
 
 ```bash
@@ -211,6 +237,7 @@ YouTube 下载逻辑：
 常用检查命令：
 
 ```bash
+uv run vmaf-workflow status --project-dir videos/video10
 jq '.bilibili.downloads | length' videos/video10/.workflow/manifest.json
 jq '.youtube.downloads | length' videos/video10/.workflow/manifest.json
 jq '.files[] | {path, role, resolution, codec}' videos/video10/.workflow/media-inventory.json
@@ -244,6 +271,8 @@ cleanup 后的重跑规则：
 
 ## 远程状态
 
+- `status` 只读取本地文件和 state，不探测远端主机；它适合快速判断下一步，但不
+  替代各执行命令自己的哈希、provenance 和内容校验。
 - `upload`、`run`、`fetch-results`、`cleanup` 通过
   `.workflow/remote-state.json` 传递
   主机、目录、哈希和阶段状态。
@@ -268,6 +297,8 @@ cleanup 后的重跑规则：
 
 ## 常见错误
 
+- `status` 报某个 JSON 不是有效对象：该状态文件已损坏，先恢复或重新生成对应
+  阶段；缺少尚未生成的 JSON 不属于损坏，status 会直接给出下一条命令。
 - `package` 报 `media-inventory.json is required`：先运行 `prepare`。
 - `remote-plan` 报 `package-manifest.json is required`：先运行 `package`。
 - `remote-plan` 提示 package manifest 与 inventory 不一致：媒体清单在打包后发生变化，重新运行 `package`。
@@ -291,7 +322,8 @@ cleanup 后的重跑规则：
   的数据目录是对应 `videos/videoN`；cleanup 后结果 tar 不存在是正常状态。
 
 CLI 返回码约定：本地参数或状态错误为 `2`，SSH/SCP、远端执行或本地删除失败
-为 `1`，远程 upload/run/fetch 被 Ctrl+C 中断为 `130`。
+为 `1`，远程 upload/run/fetch 被 Ctrl+C 中断为 `130`。`status` 对正常的未完成
+或失败阶段返回 `0`，仅在项目不存在或已有 JSON 损坏时返回 `2`。
 
 ## 手工排障
 
