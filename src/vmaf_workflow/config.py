@@ -71,7 +71,7 @@ class EasyVmafSettings:
     model_4k_min_height: int = 1600
     output_fmt: str = "json"
     endsync: bool = True
-    threads: int | None = None
+    threads: int | None = 8
     ffmpeg_min_major: int = 5
     required_branch: str = "master"
 
