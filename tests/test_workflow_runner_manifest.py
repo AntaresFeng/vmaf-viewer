@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -8,6 +11,7 @@ import pytest
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult
 from vmaf_workflow.runner import SubprocessRunner
+from vmaf_workflow.runner import ProcessInterrupted
 
 
 def test_subprocess_runner_uses_safe_capture_options(monkeypatch) -> None:
@@ -47,6 +51,271 @@ def test_subprocess_runner_uses_safe_capture_options(monkeypatch) -> None:
         "standard error",
         "url",
     )
+
+
+def test_subprocess_runner_can_stream_and_preserve_separate_output(
+    monkeypatch,
+) -> None:
+    events = []
+
+    class Pipe:
+        def __init__(self, chunks):
+            self.chunks = list(chunks)
+
+        def read1(self, _size):
+            return self.chunks.pop(0)
+
+    class Stdin:
+        def __init__(self):
+            self.value = b""
+            self.closed = False
+
+        def write(self, value):
+            self.value += value
+
+        def close(self):
+            self.closed = True
+
+    class FakeProcess:
+        stdout = Pipe([b"out-1", b"out-2", b""])
+        stderr = Pipe([b"err", b""])
+        stdin = Stdin()
+
+        def wait(self, timeout=None):
+            assert timeout is None
+            return 9
+
+    process = FakeProcess()
+    monkeypatch.setattr(
+        "vmaf_workflow.runner.subprocess.Popen",
+        lambda *_args, **_kwargs: process,
+    )
+
+    runner = SubprocessRunner(
+        lambda stream, text: events.append((stream, text)),
+        mirror_console=False,
+    )
+    result = runner.run(["tool", "arg"], stdin="选择\n")
+
+    assert result == CommandResult(
+        ("tool", "arg"),
+        9,
+        stdout="out-1out-2",
+        stderr="err",
+        stdin="选择\n",
+    )
+    assert process.stdin.value == "选择\n".encode()
+    assert process.stdin.closed is True
+    assert sorted(events) == sorted(
+        [("stdout", "out-1"), ("stdout", "out-2"), ("stderr", "err")]
+    )
+
+
+def test_subprocess_runner_external_cancel_interrupts_active_process() -> None:
+    ready = threading.Event()
+    caught = []
+    runner = SubprocessRunner(
+        lambda _stream, text: ready.set() if "ready" in text else None,
+        mirror_console=False,
+    )
+
+    def run_process() -> None:
+        try:
+            runner.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import time; print('ready', flush=True); time.sleep(30)",
+                ]
+            )
+        except BaseException as exc:
+            caught.append(exc)
+
+    thread = threading.Thread(target=run_process)
+    thread.start()
+    assert ready.wait(timeout=5)
+    runner.cancel_current()
+    thread.join(timeout=10)
+
+    assert not thread.is_alive()
+    assert len(caught) == 1
+    assert isinstance(caught[0], ProcessInterrupted)
+
+
+def test_subprocess_runner_preserves_exit_code_after_broken_stdin_pipe(
+    monkeypatch,
+) -> None:
+    class Pipe:
+        def __init__(self, chunks):
+            self.chunks = list(chunks)
+
+        def read1(self, _size):
+            return self.chunks.pop(0)
+
+    class BrokenStdin:
+        closed = False
+
+        def write(self, _value):
+            raise BrokenPipeError
+
+        def close(self):
+            self.closed = True
+
+    class FakeProcess:
+        stdout = Pipe([b"partial stdout", b""])
+        stderr = Pipe([b"early exit", b""])
+        stdin = BrokenStdin()
+
+        def wait(self, timeout=None):
+            assert timeout is None
+            return 7
+
+    monkeypatch.setattr(
+        "vmaf_workflow.runner.subprocess.Popen",
+        lambda *_args, **_kwargs: FakeProcess(),
+    )
+
+    result = SubprocessRunner(lambda *_args: None, mirror_console=False).run(
+        ["early-exit"],
+        stdin="selection\n",
+    )
+
+    assert result.returncode == 7
+    assert result.stdout == "partial stdout"
+    assert result.stderr == "early exit"
+    assert FakeProcess.stdin.closed is True
+
+
+def test_subprocess_runner_cancels_process_registered_after_request(monkeypatch) -> None:
+    popen_started = threading.Event()
+    allow_popen_return = threading.Event()
+    terminated = threading.Event()
+    caught = []
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            terminated.set()
+
+        def wait(self, timeout=None):
+            assert timeout == 5
+            assert terminated.wait(timeout=1)
+            return 130
+
+    process = FakeProcess()
+
+    def delayed_popen(*_args, **_kwargs):
+        popen_started.set()
+        assert allow_popen_return.wait(timeout=1)
+        return process
+
+    monkeypatch.setattr("vmaf_workflow.runner.subprocess.Popen", delayed_popen)
+    runner = SubprocessRunner(lambda *_args: None, mirror_console=False)
+
+    def invoke() -> None:
+        try:
+            runner.run(["delayed-registration"])
+        except BaseException as exc:
+            caught.append(exc)
+
+    thread = threading.Thread(target=invoke)
+    thread.start()
+    assert popen_started.wait(timeout=1)
+    runner.cancel_current()
+    allow_popen_return.set()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert terminated.is_set()
+    assert len(caught) == 1
+    assert isinstance(caught[0], ProcessInterrupted)
+
+
+def test_subprocess_runner_kill_fallback_has_second_timeout() -> None:
+    waits = []
+
+    class FakeProcess:
+        killed = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            self.killed = True
+
+        def wait(self, timeout=None):
+            waits.append(timeout)
+            if len(waits) == 1:
+                raise subprocess.TimeoutExpired("tool", timeout)
+            raise subprocess.TimeoutExpired("tool", timeout)
+
+    process = FakeProcess()
+    SubprocessRunner._terminate_process(process)
+
+    assert process.killed is True
+    assert waits == [5, 5]
+
+
+def test_subprocess_runner_closes_reader_pipe_after_join_timeout(monkeypatch) -> None:
+    release = threading.Event()
+
+    class BlockingPipe:
+        closed = False
+
+        def read1(self, _size):
+            release.wait(timeout=1)
+            return b""
+
+        def close(self):
+            self.closed = True
+            release.set()
+
+    class EmptyPipe:
+        def read1(self, _size):
+            return b""
+
+        def close(self):
+            pass
+
+    class FakeProcess:
+        stdout = BlockingPipe()
+        stderr = EmptyPipe()
+        stdin = None
+
+        def wait(self, timeout=None):
+            assert timeout is None
+            return 0
+
+    monkeypatch.setattr(
+        "vmaf_workflow.runner.subprocess.Popen",
+        lambda *_args, **_kwargs: FakeProcess(),
+    )
+    monkeypatch.setattr(
+        "vmaf_workflow.runner._READER_JOIN_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    result = SubprocessRunner(lambda *_args: None, mirror_console=False).run(["tool"])
+
+    assert result.returncode == 0
+    assert FakeProcess.stdout.closed is True
+
+
+def test_subprocess_runner_callback_failure_does_not_change_command_result() -> None:
+    def broken_callback(_stream: str, _text: str) -> None:
+        raise RuntimeError("UI closed")
+
+    result = SubprocessRunner(broken_callback, mirror_console=False).run(
+        [sys.executable, "-c", "print('captured')"]
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "captured\r\n" or result.stdout == "captured\n"
 
 
 def test_write_manifest_writes_jq_friendly_nested_json(tmp_path) -> None:

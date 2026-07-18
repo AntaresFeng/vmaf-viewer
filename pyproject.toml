@@ -9,6 +9,7 @@ license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 dependencies = [
     "fastapi>=0.115.0",
     "orjson>=3.10.0",
+    "textual>=6.6,<7",
     "uvicorn[standard]>=0.30.0",
 ]
 
@@ -35,4 +36,5 @@ build-backend = "hatchling.build"
 dev = [
     "httpx2>=2.5.0",
     "pytest>=9.0.3",
+    "pytest-asyncio>=1.0.0",
 ]

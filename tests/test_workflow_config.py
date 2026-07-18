@@ -42,7 +42,7 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
     assert settings.easyvmaf.model_4k_min_height == 1600
     assert settings.easyvmaf.output_fmt == "json"
     assert settings.easyvmaf.endsync is True
-    assert settings.easyvmaf.threads is None
+    assert settings.easyvmaf.threads == 8
     assert settings.easyvmaf.ffmpeg_min_major == 5
     assert settings.easyvmaf.required_branch == "master"
     assert settings.remote.host == "3080"

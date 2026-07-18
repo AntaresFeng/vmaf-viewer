@@ -11,6 +11,7 @@ from vmaf_workflow.config import BBDownSettings, YtDlpSettings
 BVID_RE = re.compile(r"BV[0-9A-Za-z]{10}")
 YOUTUBE_ID_RE = re.compile(r"^[0-9A-Za-z_-]{11}$")
 YOUTUBE_PATH_ID_PREFIXES = {"shorts", "embed", "live"}
+VIDEO_DIR_RE = re.compile(r"video(\d+)")
 
 
 @dataclass(frozen=True)
@@ -87,16 +88,26 @@ class WorkflowProject:
         return self.workflow_dir / f"{self.video_dir.name}-json.tar.gz"
 
 
+def project_from_dir(project_dir: Path) -> WorkflowProject:
+    project_dir = Path(project_dir)
+    return WorkflowProject(project_dir, project_dir / ".workflow")
+
+
+def video_project_dirs(videos_dir: Path) -> tuple[Path, ...]:
+    if not videos_dir.is_dir():
+        return ()
+    indexed = []
+    for child in videos_dir.iterdir():
+        match = VIDEO_DIR_RE.fullmatch(child.name)
+        if child.is_dir() and match is not None:
+            indexed.append((int(match.group(1)), child))
+    return tuple(path for _index, path in sorted(indexed))
+
+
 def next_video_dir(videos_dir: Path) -> Path:
-    max_index = -1
-    if videos_dir.exists():
-        for child in videos_dir.iterdir():
-            if not child.is_dir():
-                continue
-            match = re.fullmatch(r"video(\d+)", child.name)
-            if match:
-                max_index = max(max_index, int(match.group(1)))
-    return videos_dir / f"video{max_index + 1}"
+    projects = video_project_dirs(videos_dir)
+    next_index = 0 if not projects else int(projects[-1].name.removeprefix("video")) + 1
+    return videos_dir / f"video{next_index}"
 
 
 def create_project(

@@ -1152,6 +1152,33 @@ def test_download_help_includes_project_dir(capsys) -> None:
     assert "--project-dir" in captured.out
 
 
+@pytest.mark.parametrize("command", ["interactive", "auto"])
+def test_interactive_and_auto_use_same_entrypoint(
+    command: str,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls = []
+
+    def fake_interactive(*, videos_dir, project_dir):
+        calls.append((videos_dir, project_dir))
+        return 17
+
+    monkeypatch.setattr("vmaf_workflow.tui.run_interactive", fake_interactive)
+    project_dir = tmp_path / "video3"
+
+    assert main(
+        [
+            command,
+            "--videos-dir",
+            str(tmp_path),
+            "--project-dir",
+            str(project_dir),
+        ]
+    ) == 17
+    assert calls == [(tmp_path, project_dir)]
+
+
 def test_download_invalid_bvid_fails_without_creating_project(
     tmp_path: Path, capsys
 ) -> None:

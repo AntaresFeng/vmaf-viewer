@@ -12,6 +12,8 @@ from vmaf_workflow.project import (
     next_video_dir,
     normalize_bvid,
     normalize_youtube_url,
+    project_from_dir,
+    video_project_dirs,
     write_text,
     ytdlp_config_text,
 )
@@ -25,6 +27,19 @@ def test_next_video_dir_uses_next_numeric_suffix_and_ignores_other_names(
     (tmp_path / "videoX").mkdir()
 
     assert next_video_dir(tmp_path) == tmp_path / "video3"
+
+
+def test_project_helpers_share_numeric_video_directory_rules(tmp_path: Path) -> None:
+    for name in ("video10", "video4", "video-old", "other3"):
+        (tmp_path / name).mkdir()
+
+    assert video_project_dirs(tmp_path) == (
+        tmp_path / "video4",
+        tmp_path / "video10",
+    )
+    project = project_from_dir(tmp_path / "video10")
+    assert project.video_dir == tmp_path / "video10"
+    assert project.workflow_dir == tmp_path / "video10" / ".workflow"
 
 
 def test_create_project_creates_video0_workflow_and_infojson_dirs(

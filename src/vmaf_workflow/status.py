@@ -29,20 +29,20 @@ def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
             f"project directory is required: {project.video_dir}"
         )
 
-    manifest = _load_optional_json_object(project.manifest_path, "manifest.json")
-    inventory = _load_optional_json_object(
+    manifest = load_optional_json_object(project.manifest_path, "manifest.json")
+    inventory = load_optional_json_object(
         project.media_inventory_path,
         "media-inventory.json",
     )
-    package_manifest = _load_optional_json_object(
+    package_manifest = load_optional_json_object(
         project.package_manifest_path,
         "package-manifest.json",
     )
-    remote_plan = _load_optional_json_object(
+    remote_plan = load_optional_json_object(
         project.remote_plan_path,
         "remote-plan.json",
     )
-    remote_state = _load_optional_json_object(
+    remote_state = load_optional_json_object(
         project.remote_state_path,
         "remote-state.json",
     )
@@ -257,7 +257,7 @@ def _report(
     )
 
 
-def _load_optional_json_object(
+def load_optional_json_object(
     path: Path,
     label: str,
 ) -> dict[str, Any] | None:
