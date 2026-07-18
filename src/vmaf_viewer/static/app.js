@@ -265,7 +265,7 @@ function applyFilesResponse(body, { preserveSelection = true, resetFilter = fals
   updateSelectedCount();
 
   if (!state.files.length) {
-    renderMessage({ status: "No *_vmaf.json files found." });
+    renderMessage({ status: "No VMAF log files (*.json, *.csv, *.xml) found." });
   } else {
     renderMessage({ status: VmafMessageState.DEFAULT_STATUS_MESSAGE });
   }
@@ -313,7 +313,7 @@ function renderFiles() {
   if (!files.length) {
     const empty = document.createElement("div");
     empty.className = "message";
-    empty.textContent = state.files.length ? "No files match the filter." : "No *_vmaf.json files found.";
+    empty.textContent = state.files.length ? "No files match the filter." : "No VMAF log files (*.json, *.csv, *.xml) found.";
     elements.fileList.appendChild(empty);
     return;
   }
@@ -363,7 +363,7 @@ async function requestComparison() {
     state.extraSeries.clear();
     state.primarySeriesCache.clear();
     renderMessage({
-      status: state.files.length ? VmafMessageState.DEFAULT_STATUS_MESSAGE : "No *_vmaf.json files found.",
+      status: state.files.length ? VmafMessageState.DEFAULT_STATUS_MESSAGE : "No VMAF log files (*.json, *.csv, *.xml) found.",
     });
     renderSummary();
     renderControls();

@@ -1,16 +1,18 @@
 [project]
 name = "vmaf-json-viewer"
-version = "0.1.0"
-description = "Local web viewer for comparing libvmaf JSON outputs"
+version = "0.2.0"
+description = "Local web viewer for comparing libvmaf JSON, CSV, or XML outputs"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 dependencies = [
     "fastapi>=0.115.0",
+    "lxml>=6.1.1",
     "orjson>=3.10.0",
     "textual>=6.6,<7",
     "uvicorn[standard]>=0.30.0",
+    "natsort>=8.4.0",
 ]
 
 [project.scripts]

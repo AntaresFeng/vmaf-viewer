@@ -83,6 +83,51 @@ def test_api_compare_returns_summary_and_charts():
     assert set(body["series"]) == {item["id"] for item in files}
 
 
+def test_api_compare_supports_mixed_json_csv_and_xml_logs(tmp_path):
+    alpha = Path("tests/fixtures/alpha_vmaf.json")
+    (tmp_path / "alpha_vmaf.json").write_text(
+        alpha.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "gamma_vmaf.csv").write_text(
+        "Frame,vmaf,integer_motion\n0,93,1\n1,92,2\n2,91,3\n3,90,4\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "delta_vmaf.xml").write_text(
+        """
+        <VMAF version="fixture">
+          <frames>
+            <frame frameNum="0" vmaf="89"/>
+            <frame frameNum="1" vmaf="88"/>
+            <frame frameNum="2" vmaf="87"/>
+            <frame frameNum="3" vmaf="86"/>
+          </frames>
+        </VMAF>
+        """,
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(data_dir=tmp_path))
+    files = client.get("/api/files").json()["files"]
+
+    response = client.post(
+        "/api/compare",
+        json={"file_ids": [item["id"] for item in files], "max_points": 100},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["name"] for item in files] == [
+        "alpha_vmaf.json",
+        "delta_vmaf.xml",
+        "gamma_vmaf.csv",
+    ]
+    assert {row["name"] for row in body["summary"]} == {
+        "alpha_vmaf.json",
+        "gamma_vmaf.csv",
+        "delta_vmaf.xml",
+    }
+    assert body["common_range"]["frame_count"] == 4
+
+
 def test_api_compare_skips_bad_json_and_keeps_valid_results(tmp_path):
     fixture = Path("tests/fixtures/alpha_vmaf.json")
     (tmp_path / "alpha_vmaf.json").write_text(
@@ -108,13 +153,37 @@ def test_api_compare_skips_bad_json_and_keeps_valid_results(tmp_path):
     assert body["warnings"] == ["Invalid JSON in bad_vmaf.json"]
 
 
+def test_api_compare_skips_bad_csv_and_keeps_valid_results(tmp_path):
+    fixture = Path("tests/fixtures/alpha_vmaf.json")
+    (tmp_path / "alpha_vmaf.json").write_text(
+        fixture.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "bad_vmaf.csv").write_text("vmaf\n99.0\n", encoding="utf-8")
+    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
+    files = client.get("/api/files").json()["files"]
+
+    response = client.post(
+        "/api/compare",
+        json={
+            "file_ids": [item["id"] for item in files],
+            "thresholds": [90],
+            "max_points": 100,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [row["name"] for row in body["summary"]] == ["alpha_vmaf.json"]
+    assert body["warnings"] == ["bad_vmaf.csv is missing 'Frame' column"]
+
+
 def test_api_compare_rejects_empty_selection():
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
 
     response = client.post("/api/compare", json={"file_ids": [], "thresholds": [90]})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Select at least one VMAF JSON file."
+    assert response.json()["detail"] == "Select at least one VMAF log file."
 
 
 def test_api_compare_rejects_unknown_file_id():
@@ -197,6 +266,34 @@ def test_api_series_returns_bad_request_for_invalid_json(tmp_path):
 
     assert response.status_code == 400
     assert "Invalid JSON" in response.json()["detail"]
+
+
+def test_api_metrics_and_series_return_bad_request_for_invalid_xml(tmp_path):
+    (tmp_path / "bad_vmaf.xml").write_text("<VMAF><frames>", encoding="utf-8")
+    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
+    file_id = client.get("/api/files").json()["files"][0]["id"]
+
+    metrics_response = client.get(f"/api/file/{file_id}/metrics")
+    series_response = client.post(
+        "/api/series",
+        json={"file_ids": [file_id], "metrics": ["vmaf"], "max_points": 100},
+    )
+
+    assert metrics_response.status_code == 400
+    assert series_response.status_code == 400
+    assert "Invalid XML" in metrics_response.json()["detail"]
+    assert "Invalid XML" in series_response.json()["detail"]
+
+
+def test_api_metrics_returns_bad_request_for_non_utf8_csv(tmp_path):
+    (tmp_path / "bad_vmaf.csv").write_bytes(b"frameNum,vmaf\n0,\xff\n")
+    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
+    file_id = client.get("/api/files").json()["files"][0]["id"]
+
+    response = client.get(f"/api/file/{file_id}/metrics")
+
+    assert response.status_code == 400
+    assert "Invalid CSV" in response.json()["detail"]
 
 
 def test_api_returns_bad_request_for_invalid_frame_num(tmp_path):

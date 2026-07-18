@@ -6,7 +6,7 @@ This file gives coding agents durable, repository-specific guidance. Keep it con
 
 VMAF Compare is a local toolkit for comparing video encodes with Netflix VMAF:
 
-- `vmaf-viewer` is a local FastAPI + static ECharts web app for comparing multiple `*_vmaf.json` files.
+- `vmaf-viewer` is a local FastAPI + static ECharts web app for comparing VMAF JSON, CSV, and XML files.
 - `vmaf-workflow` automates the local and remote lifecycle from Bilibili/YouTube download through prepare, package, remote execution, result fetch, cleanup, and status inspection.
 - The comparison focus is degraded-video vs degraded-video ranking, not only "where one encode differs from the source."
 
@@ -53,7 +53,7 @@ uv run python devscripts/fetch_echarts.py
 
 Check `pyproject.toml` for details. Available local tools:
 
-- Python 3.11+ managed with `uv`
+- Python 3.12+ managed with `uv`
 - `ffmpeg` with libvmaf support; verify with `ffmpeg -h filter=libvmaf`
 - `ffprobe`
 - `jq` for shell scripts
@@ -86,6 +86,7 @@ Check `pyproject.toml` for details. Available local tools:
 ## Documentation Links
 
 - Workflow usage and lifecycle: `src/vmaf_workflow/README.md`
+- VMAF CSV log structure: `docs/vmaf-csv-structure.md`
 - VMAF JSON schema: `docs/vmaf_schema.json`
 - VMAF zero-score investigation: `docs/vmaf-zero-score-issue.md` Essentially, it's frame synchronization.
 - fps filter / PTS normalization note: `docs/fps-filter-pts-normalization-side-effect.md`
