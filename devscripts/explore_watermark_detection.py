@@ -5,12 +5,17 @@ import json
 import math
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Sequence
 
 import cv2
 import numpy as np
+
+
+MAX_SAMPLE_WORKERS = 4
 
 
 @dataclass(frozen=True)
@@ -123,12 +128,15 @@ def sample_times(duration: float, count: int) -> list[float]:
     return np.linspace(start, end, count, dtype=np.float64).tolist()
 
 
-def extract_gray_frame(
+def extract_gray_frames(
     path: Path,
     timestamp: float,
+    count: int,
     size: tuple[int, int],
     ffmpeg: str,
 ) -> np.ndarray:
+    if count < 1:
+        raise ValueError("frame count must be positive")
     width, height = size
     command = [
         ffmpeg,
@@ -142,22 +150,36 @@ def extract_gray_frame(
         "-map",
         "0:v:0",
         "-frames:v",
-        "1",
+        str(count),
         "-vf",
         f"scale={width}:{height}:flags=lanczos,format=gray",
         "-pix_fmt",
         "gray",
+        "-fps_mode",
+        "passthrough",
         "-f",
         "rawvideo",
         "pipe:1",
     ]
     result = subprocess.run(command, check=True, capture_output=True)
-    expected = width * height
+    expected = count * width * height
     if len(result.stdout) != expected:
         raise RuntimeError(
-            f"ffmpeg returned {len(result.stdout)} frame bytes, expected {expected}"
+            f"ffmpeg returned {len(result.stdout)} frame bytes for {count} frames, "
+            f"expected {expected}"
         )
-    return np.frombuffer(result.stdout, dtype=np.uint8).reshape(height, width)
+    return np.frombuffer(result.stdout, dtype=np.uint8).reshape(
+        count, height, width
+    )
+
+
+def extract_gray_frame(
+    path: Path,
+    timestamp: float,
+    size: tuple[int, int],
+    ffmpeg: str,
+) -> np.ndarray:
+    return extract_gray_frames(path, timestamp, 1, size, ffmpeg)[0]
 
 
 def normalize_reference(reference: np.ndarray, distorted: np.ndarray) -> np.ndarray:
@@ -209,20 +231,112 @@ def choose_reference_frame(
     if radius_frames < 0:
         raise ValueError("sync radius must not be negative")
     frame_duration = 1.0 / reference_info.fps if reference_info.fps > 0 else 0.0
+    if frame_duration == 0.0:
+        candidate = extract_gray_frame(reference_path, timestamp, size, ffmpeg)
+        return candidate, 0.0, alignment_score(candidate, distorted_frame)
+
+    candidate_times = [
+        min(
+            max(0.0, timestamp + frame_offset * frame_duration),
+            max(0.0, reference_info.duration - 0.001),
+        )
+        for frame_offset in range(-radius_frames, radius_frames + 1)
+    ]
+    contiguous = all(
+        math.isclose(
+            later - earlier,
+            frame_duration,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        )
+        for earlier, later in zip(candidate_times, candidate_times[1:])
+    )
+    if contiguous:
+        candidates = extract_gray_frames(
+            reference_path,
+            candidate_times[0],
+            len(candidate_times),
+            size,
+            ffmpeg,
+        )
+    else:
+        # Clamping near a media boundary may duplicate candidate timestamps.
+        # Preserve the old independent-seek behavior for this uncommon case.
+        candidates = np.stack(
+            [
+                extract_gray_frame(reference_path, candidate_time, size, ffmpeg)
+                for candidate_time in candidate_times
+            ]
+        )
+
     best: tuple[np.ndarray, float, float] | None = None
-    for frame_offset in range(-radius_frames, radius_frames + 1):
-        candidate_time = timestamp + frame_offset * frame_duration
-        candidate_time = min(
-            max(0.0, candidate_time), max(0.0, reference_info.duration - 0.001)
-        )
-        candidate = extract_gray_frame(
-            reference_path, candidate_time, size, ffmpeg
-        )
+    for candidate_time, candidate in zip(candidate_times, candidates, strict=True):
         score = alignment_score(candidate, distorted_frame)
         if best is None or score < best[2]:
             best = (candidate, candidate_time - timestamp, score)
     assert best is not None
     return best
+
+
+def analyze_sample(
+    timestamp: float,
+    *,
+    distorted_path: Path,
+    reference_path: Path,
+    reference_info: MediaInfo,
+    size: tuple[int, int],
+    radius_frames: int,
+    ffmpeg: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
+    distorted_frame = extract_gray_frame(
+        distorted_path, timestamp, size, ffmpeg
+    )
+    reference_frame, offset, score = choose_reference_frame(
+        reference_path,
+        timestamp,
+        reference_info,
+        distorted_frame,
+        size,
+        radius_frames,
+        ffmpeg,
+    )
+    positive, absolute = standardized_positive_residual(
+        reference_frame, distorted_frame
+    )
+    alignment = {
+        "timestamp": round(timestamp, 6),
+        "reference_offset_seconds": round(offset, 6),
+        "alignment_score": round(score, 6),
+    }
+    return positive, absolute, distorted_frame, alignment
+
+
+def analyze_samples(
+    timestamps: Sequence[float],
+    *,
+    distorted_path: Path,
+    reference_path: Path,
+    reference_info: MediaInfo,
+    size: tuple[int, int],
+    radius_frames: int,
+    ffmpeg: str,
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, float]]]:
+    if not timestamps:
+        return []
+    worker = partial(
+        analyze_sample,
+        distorted_path=distorted_path,
+        reference_path=reference_path,
+        reference_info=reference_info,
+        size=size,
+        radius_frames=radius_frames,
+        ffmpeg=ffmpeg,
+    )
+    max_workers = min(MAX_SAMPLE_WORKERS, len(timestamps))
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="watermark-sample"
+    ) as executor:
+        return list(executor.map(worker, timestamps))
 
 
 def standardized_positive_residual(
@@ -392,36 +506,19 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
     duration = min(distorted_info.duration, reference_info.duration)
     timestamps = sample_times(duration, args.samples)
 
-    positive_residuals: list[np.ndarray] = []
-    absolute_residuals: list[np.ndarray] = []
-    preview_frames: list[np.ndarray] = []
-    alignments: list[dict[str, float]] = []
-    for timestamp in timestamps:
-        distorted_frame = extract_gray_frame(
-            distorted_path, timestamp, size, args.ffmpeg
-        )
-        reference_frame, offset, score = choose_reference_frame(
-            reference_path,
-            timestamp,
-            reference_info,
-            distorted_frame,
-            size,
-            args.sync_radius_frames,
-            args.ffmpeg,
-        )
-        positive, absolute = standardized_positive_residual(
-            reference_frame, distorted_frame
-        )
-        positive_residuals.append(positive)
-        absolute_residuals.append(absolute)
-        preview_frames.append(distorted_frame)
-        alignments.append(
-            {
-                "timestamp": round(timestamp, 6),
-                "reference_offset_seconds": round(offset, 6),
-                "alignment_score": round(score, 6),
-            }
-        )
+    sample_results = analyze_samples(
+        timestamps,
+        distorted_path=distorted_path,
+        reference_path=reference_path,
+        reference_info=reference_info,
+        size=size,
+        radius_frames=args.sync_radius_frames,
+        ffmpeg=args.ffmpeg,
+    )
+    positive_residuals = [result[0] for result in sample_results]
+    absolute_residuals = [result[1] for result in sample_results]
+    preview_frames = [result[2] for result in sample_results]
+    alignments = [result[3] for result in sample_results]
 
     positive_stack = np.stack(positive_residuals)
     absolute_stack = np.stack(absolute_residuals)
@@ -459,6 +556,7 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
             "minimum_frequency": args.minimum_frequency,
             "minimum_median_z": args.minimum_median_z,
             "sync_radius_frames": args.sync_radius_frames,
+            "sample_workers": min(MAX_SAMPLE_WORKERS, len(timestamps)),
         },
         "alignments": alignments,
         "candidates": [asdict(candidate) for candidate in candidates[:20]],
