@@ -37,6 +37,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "httpx2>=2.5.0",
+    "opencv-python-headless>=5.0.0.93",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.0.0",
 ]

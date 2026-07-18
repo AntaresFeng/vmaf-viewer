@@ -90,4 +90,5 @@ Check `pyproject.toml` for details. Available local tools:
 - VMAF JSON schema: `docs/vmaf_schema.json`
 - VMAF zero-score investigation: `docs/vmaf-zero-score-issue.md` Essentially, it's frame synchronization.
 - fps filter / PTS normalization note: `docs/fps-filter-pts-normalization-side-effect.md`
+- Bilibili fixed-watermark detection research: `docs/bilibili-watermark-detection-research.md`
 - Captured local FFmpeg libvmaf help: `docs/ffmpeg_help_libvamf.txt`
