@@ -81,11 +81,12 @@ def test_normalize_ytdlp_format_builds_resolution_and_uses_tbr_fallback() -> Non
     assert stream.size_bytes == 2222
 
 
-def test_parse_ytdlp_preflight_keeps_only_1080p_plus_video_only_targets() -> None:
+def test_parse_ytdlp_preflight_uses_1000_minimum_height_for_video_only() -> None:
     raw_info = {
         "formats": [
             {"format_id": "18", "height": 720, "vcodec": "avc1", "acodec": "mp4a"},
-            {"format_id": "137", "height": 1080, "vcodec": "avc1", "acodec": "none"},
+            {"format_id": "999", "height": 999, "vcodec": "avc1", "acodec": "none"},
+            {"format_id": "1000", "height": 1000, "vcodec": "avc1", "acodec": "none"},
             {"format_id": "399", "height": 1080, "vcodec": "none", "acodec": "none"},
             {"format_id": "401", "height": 2160, "vcodec": "av01", "acodec": "none"},
         ],
@@ -97,8 +98,8 @@ def test_parse_ytdlp_preflight_keeps_only_1080p_plus_video_only_targets() -> Non
 
     selected, requested = parse_ytdlp_preflight(raw_info)
 
-    assert [stream.index for stream in selected] == [1, 3]
-    assert [stream.format_id for stream in selected] == ["137", "401"]
+    assert [stream.index for stream in selected] == [2, 4]
+    assert [stream.format_id for stream in selected] == ["1000", "401"]
     assert [stream.index for stream in requested] == [None]
     assert [stream.format_id for stream in requested] == ["401"]
 

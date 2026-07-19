@@ -297,7 +297,8 @@ B 站下载逻辑：
 
 YouTube 下载逻辑：
 
-- yt-dlp 选择器为 `all[height>=1080][vcodec!=none][acodec=none]`。
+- yt-dlp 选择器为 `all[height>=1000][vcodec!=none][acodec=none]`，即保留高度至少
+  1000 像素的纯视频流（包括画面裁切后高度低于 1080 的 1080p 片源）。
 - 输出模板为 `%(id)s-%(format_note)s-%(vcodec)s.%(ext)s`。
 - 同时写入 `yt-dlp.after_video.jsonl` 和 `yt-dlp-infojson/`，用于记录实际下载的流。
 

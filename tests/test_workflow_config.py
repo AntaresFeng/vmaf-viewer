@@ -6,6 +6,7 @@ from vmaf_workflow.config import (
     HIGH_1080_LABELS,
     QUALITY_LABELS,
     YTDLP_FORMAT_SELECTOR,
+    YTDLP_MIN_HEIGHT,
     default_settings,
 )
 from vmaf_workflow.models import DownloadDecision, StreamRecord
@@ -33,7 +34,7 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
         == "<bvid>-P<pageNumberWithZero>-<pageTitle>-<dfn>-<videoCodecs>"
     )
     assert settings.ytdlp.format_selector == (
-        "all[height>=1080][vcodec!=none][acodec=none]"
+        "all[height>=1000][vcodec!=none][acodec=none]"
     )
     assert settings.ytdlp.output_template == (
         "%(id)s-%(format_note)s-%(vcodec)s.%(ext)s"
@@ -51,7 +52,8 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
     assert settings.remote.scp_executable == Path("scp")
     assert settings.remote.connect_timeout_seconds == 10
     assert settings.remote.server_alive_interval_seconds == 30
-    assert YTDLP_FORMAT_SELECTOR == "all[height>=1080][vcodec!=none][acodec=none]"
+    assert YTDLP_MIN_HEIGHT == 1000
+    assert YTDLP_FORMAT_SELECTOR == "all[height>=1000][vcodec!=none][acodec=none]"
 
 
 def test_easyvmaf_settings_infers_remote_executable_from_repo_shape():
