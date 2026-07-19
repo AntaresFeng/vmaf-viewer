@@ -85,9 +85,7 @@ def upload_project(
         "remote-plan.json",
     )
     if result_provenance != RESULT_PROVENANCE_NAME:
-        raise RemoteWorkflowError(
-            "remote-plan.json result_provenance is unsupported"
-        )
+        raise RemoteWorkflowError("remote-plan.json result_provenance is unsupported")
     package_path = _resolve_package_path(project, package_manifest, package_name)
     package_sha256 = sha256_file(package_path)
     script_sha256 = sha256_file(project.remote_plan_script_path)
@@ -103,20 +101,12 @@ def upload_project(
     provenance_sha256 = sha256_file(project.remote_provenance_path)
 
     target_settings = settings.with_target(
-        work_dir=(
-            settings.work_dir
-            / project.video_dir.name
-            / plan_sha256
-        )
+        work_dir=(settings.work_dir / project.video_dir.name / plan_sha256)
     )
     active_transport = transport or RemoteTransport(target_settings, runner)
-    remote_script_path = (
-        target_settings.work_dir / project.remote_plan_script_path.name
-    )
+    remote_script_path = target_settings.work_dir / project.remote_plan_script_path.name
     remote_package_path = target_settings.work_dir / package_name
-    remote_provenance_path = (
-        target_settings.work_dir / result_provenance
-    )
+    remote_provenance_path = target_settings.work_dir / result_provenance
     started_at = utc_now()
     state: dict[str, Any] = {
         "schema_version": 1,
@@ -191,8 +181,7 @@ def upload_project(
         }
         if environment_returncode != 0:
             raise RemoteCommandError(
-                f"environment preflight failed with exit code "
-                f"{environment_returncode}"
+                f"environment preflight failed with exit code {environment_returncode}"
             )
 
         stage = "upload-package"
@@ -230,9 +219,7 @@ def upload_project(
             preflight_argument,
             project.remote_upload_log_path,
         )
-        state["upload"]["package_preflight"] = {
-            "returncode": preflight_returncode
-        }
+        state["upload"]["package_preflight"] = {"returncode": preflight_returncode}
         if preflight_returncode != 0:
             raise RemoteCommandError(
                 f"package preflight failed with exit code {preflight_returncode}"
@@ -354,9 +341,7 @@ def run_remote_project(
         )
         state["run"]["returncode"] = returncode
         if returncode != 0:
-            raise RemoteCommandError(
-                f"remote run failed with exit code {returncode}"
-            )
+            raise RemoteCommandError(f"remote run failed with exit code {returncode}")
 
         stage = "result-hash"
         result_sha256 = active_transport.remote_sha256(
@@ -462,9 +447,7 @@ def fetch_results(
     temp_archive = project.workflow_dir / (
         f".{result_archive}.download-{uuid.uuid4().hex}"
     )
-    staging_dir = project.workflow_dir / (
-        f".results-staging-{uuid.uuid4().hex}"
-    )
+    staging_dir = project.workflow_dir / (f".results-staging-{uuid.uuid4().hex}")
     stage = "remote-hash"
     try:
         remote_sha256 = active_transport.remote_sha256(
@@ -472,13 +455,9 @@ def fetch_results(
             project.remote_fetch_log_path,
         )
         if remote_sha256 is None:
-            raise RemoteCommandError(
-                f"remote result archive is missing: {remote_path}"
-            )
+            raise RemoteCommandError(f"remote result archive is missing: {remote_path}")
         if tracked_sha256 is not None and remote_sha256 != tracked_sha256:
-            raise RemoteCommandError(
-                "remote result SHA-256 differs from completed run"
-            )
+            raise RemoteCommandError("remote result SHA-256 differs from completed run")
 
         stage = "download"
         active_transport.download(
@@ -645,9 +624,7 @@ def _expected_result_paths(
 ) -> list[str]:
     raw_results = plan.get("expected_results")
     if not isinstance(raw_results, list) or not raw_results:
-        raise RemoteWorkflowError(
-            "remote-plan.json must contain expected_results"
-        )
+        raise RemoteWorkflowError("remote-plan.json must contain expected_results")
     results = []
     for raw_path in raw_results:
         if not isinstance(raw_path, str):
@@ -674,9 +651,7 @@ def _validate_plan_against_inventory(
 ) -> None:
     inventory_files = inventory.get("files")
     if not isinstance(inventory_files, list):
-        raise RemoteWorkflowError(
-            "media-inventory.json must contain a files list"
-        )
+        raise RemoteWorkflowError("media-inventory.json must contain a files list")
     reference_paths = [
         entry.get("path")
         for entry in inventory_files
@@ -688,15 +663,11 @@ def _validate_plan_against_inventory(
         if isinstance(entry, dict) and entry.get("role") == "distorted"
     ]
     if len(reference_paths) != 1 or not isinstance(reference_paths[0], str):
-        raise RemoteWorkflowError(
-            "media-inventory.json must contain one reference"
-        )
+        raise RemoteWorkflowError("media-inventory.json must contain one reference")
     if not distorted_paths or not all(
         isinstance(path, str) for path in distorted_paths
     ):
-        raise RemoteWorkflowError(
-            "media-inventory.json must contain distorted files"
-        )
+        raise RemoteWorkflowError("media-inventory.json must contain distorted files")
 
     plan_reference = plan.get("reference")
     if (
@@ -704,8 +675,7 @@ def _validate_plan_against_inventory(
         or plan_reference.get("path") != reference_paths[0]
     ):
         raise RemoteWorkflowError(
-            "remote plan reference does not match media inventory; "
-            "rerun remote-plan"
+            "remote plan reference does not match media inventory; rerun remote-plan"
         )
     commands = plan.get("commands")
     if not isinstance(commands, list):
@@ -722,9 +692,7 @@ def _validate_plan_against_inventory(
         if not isinstance(distorted, dict) or not isinstance(
             distorted.get("path"), str
         ):
-            raise RemoteWorkflowError(
-                "remote plan command distorted path is invalid"
-            )
+            raise RemoteWorkflowError("remote plan command distorted path is invalid")
         if (
             not isinstance(reference, dict)
             or reference.get("path") != reference_paths[0]
@@ -733,9 +701,7 @@ def _validate_plan_against_inventory(
                 "remote plan command reference does not match inventory"
             )
         if not isinstance(expected_result, str):
-            raise RemoteWorkflowError(
-                "remote plan command expected_result is invalid"
-            )
+            raise RemoteWorkflowError("remote plan command expected_result is invalid")
         command_distorted_paths.append(distorted["path"])
         command_results.append(expected_result)
 
@@ -746,8 +712,7 @@ def _validate_plan_against_inventory(
         )
     if plan.get("expected_results") != command_results:
         raise RemoteWorkflowError(
-            "remote plan expected_results do not match commands; "
-            "rerun remote-plan"
+            "remote plan expected_results do not match commands; rerun remote-plan"
         )
 
 
@@ -764,29 +729,19 @@ def _read_validated_results(
         members = archive.getmembers()
         member_names = [member.name for member in members]
         if len(member_names) != len(set(member_names)):
-            raise RemoteWorkflowError(
-                "result archive contains duplicate members"
-            )
+            raise RemoteWorkflowError("result archive contains duplicate members")
         if set(member_names) != expected_set:
             if result_provenance not in member_names:
-                raise RemoteWorkflowError(
-                    "result archive is missing provenance"
-                )
-            raise RemoteWorkflowError(
-                "result archive members do not match remote plan"
-            )
+                raise RemoteWorkflowError("result archive is missing provenance")
+            raise RemoteWorkflowError("result archive members do not match remote plan")
         members_by_name = {member.name: member for member in members}
         provenance_member = members_by_name[result_provenance]
         if not provenance_member.isfile():
-            raise RemoteWorkflowError(
-                "result provenance is not a regular file"
-            )
+            raise RemoteWorkflowError("result provenance is not a regular file")
         provenance_file = archive.extractfile(provenance_member)
         if provenance_file is None:
             raise RemoteWorkflowError("result provenance cannot be read")
-        provenance = json.loads(
-            provenance_file.read().decode("utf-8")
-        )
+        provenance = json.loads(provenance_file.read().decode("utf-8"))
         _validate_result_provenance(provenance, state)
         for expected_path in expected_results:
             member = members_by_name[expected_path]
@@ -819,9 +774,7 @@ def _validate_result_provenance(
     if not isinstance(provenance, dict):
         raise RemoteWorkflowError("result provenance must be a JSON object")
     if provenance.get("schema_version") != 1:
-        raise RemoteWorkflowError(
-            "result provenance schema_version must be 1"
-        )
+        raise RemoteWorkflowError("result provenance schema_version must be 1")
     if provenance.get("project") != state.get("project"):
         raise RemoteWorkflowError("result provenance project does not match")
     plan_state = state.get("plan")
@@ -829,18 +782,15 @@ def _validate_result_provenance(
     if not isinstance(plan_state, dict) or not isinstance(upload_state, dict):
         raise RemoteWorkflowError("remote state provenance inputs are invalid")
     if provenance.get("plan_sha256") != plan_state.get("sha256"):
-        raise RemoteWorkflowError(
-            "result provenance plan SHA-256 does not match"
-        )
+        raise RemoteWorkflowError("result provenance plan SHA-256 does not match")
     for artifact, key in (
         ("package", "package_sha256"),
         ("script", "script_sha256"),
     ):
         artifact_state = upload_state.get(artifact)
-        if (
-            not isinstance(artifact_state, dict)
-            or provenance.get(key) != artifact_state.get("sha256")
-        ):
+        if not isinstance(artifact_state, dict) or provenance.get(
+            key
+        ) != artifact_state.get("sha256"):
             raise RemoteWorkflowError(
                 f"result provenance {artifact} SHA-256 does not match"
             )
@@ -861,13 +811,9 @@ def _install_results_transactionally(
         staged_path.write_bytes(content)
         staged_files.append((staged_path, destination))
 
-    backup_dir = project.workflow_dir / (
-        f".results-backup-{uuid.uuid4().hex}"
-    )
+    backup_dir = project.workflow_dir / (f".results-backup-{uuid.uuid4().hex}")
     backup_dir.mkdir(parents=True)
-    backup_targets = [
-        destination for _staged_path, destination in staged_files
-    ]
+    backup_targets = [destination for _staged_path, destination in staged_files]
     backup_targets.append(project.default_result_archive_path)
     backups: list[tuple[Path, Path]] = []
     installed: list[Path] = []
@@ -903,8 +849,7 @@ def _install_results_transactionally(
                 rollback_errors.append(str(rollback_exc))
         if rollback_errors:
             raise RemoteWorkflowError(
-                f"{exc}; result rollback failed: "
-                + "; ".join(rollback_errors)
+                f"{exc}; result rollback failed: " + "; ".join(rollback_errors)
             ) from exc
         raise
     finally:
@@ -933,18 +878,14 @@ def _require_uploaded_artifact_hash(
 ) -> None:
     artifact_state = state.get("upload", {}).get(artifact)
     if not isinstance(artifact_state, dict):
-        raise RemoteWorkflowError(
-            f"remote state has no upload.{artifact} section"
-        )
+        raise RemoteWorkflowError(f"remote state has no upload.{artifact} section")
     remote_path = _pure_posix_path(
         artifact_state.get("remote_path"),
         f"remote state upload.{artifact}.remote_path",
     )
     expected_sha256 = artifact_state.get("sha256")
     if not isinstance(expected_sha256, str):
-        raise RemoteWorkflowError(
-            f"remote state upload.{artifact}.sha256 is invalid"
-        )
+        raise RemoteWorkflowError(f"remote state upload.{artifact}.sha256 is invalid")
     _require_remote_hash(
         transport,
         remote_path,
@@ -1004,9 +945,7 @@ def _state_remote_path(
         raise RemoteWorkflowError(f"remote state has no {section} section")
     artifact_state = section_state.get(artifact)
     if not isinstance(artifact_state, dict):
-        raise RemoteWorkflowError(
-            f"remote state has no {section}.{artifact} section"
-        )
+        raise RemoteWorkflowError(f"remote state has no {section}.{artifact} section")
     return _pure_posix_path(
         artifact_state.get(key),
         f"remote state {section}.{artifact}.{key}",

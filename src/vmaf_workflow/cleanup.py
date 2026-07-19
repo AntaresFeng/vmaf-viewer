@@ -136,9 +136,7 @@ def _validate_project_state(
     state: dict[str, Any],
 ) -> None:
     if state.get("project") != project.video_dir.name:
-        raise CleanupStateError(
-            "remote state project does not match project directory"
-        )
+        raise CleanupStateError("remote state project does not match project directory")
 
 
 def _require_default_package_path(
@@ -182,7 +180,9 @@ def _current_or_cleaned_artifact(
     if present:
         return _validate_archive(expected_path, artifact_state, label)
     if expected_path.exists():
-        raise CleanupStateError(f"{label} archive is not a regular file: {expected_path}")
+        raise CleanupStateError(
+            f"{label} archive is not a regular file: {expected_path}"
+        )
 
     previous = _previous_cleanup_artifact(previous_cleanup, artifact_name)
     expected_sha256 = artifact_state.get("sha256")
@@ -288,9 +288,7 @@ def _validate_package_contents(
                             f"{expected[member.name]}"
                         )
     except (OSError, tarfile.TarError) as exc:
-        raise CleanupStateError(
-            f"input archive cannot be validated: {exc}"
-        ) from exc
+        raise CleanupStateError(f"input archive cannot be validated: {exc}") from exc
 
 
 def _read_package_manifest_snapshot(
@@ -313,9 +311,7 @@ def _read_package_manifest_snapshot(
             "input archive package manifest is not valid JSON"
         ) from exc
     if not isinstance(snapshot, dict):
-        raise CleanupStateError(
-            "input archive package manifest must be a JSON object"
-        )
+        raise CleanupStateError("input archive package manifest must be a JSON object")
     return snapshot
 
 
@@ -427,8 +423,7 @@ def _validate_result_archive_contents(
 ) -> None:
     expected = {
         (
-            f"{project.video_dir.name}/"
-            f"{path.relative_to(project.video_dir).as_posix()}"
+            f"{project.video_dir.name}/{path.relative_to(project.video_dir).as_posix()}"
         ): path
         for path in installed_paths
     }
@@ -462,9 +457,7 @@ def _validate_result_archive_contents(
                             f"{expected[member.name]}"
                         )
     except (OSError, tarfile.TarError) as exc:
-        raise CleanupStateError(
-            f"result archive cannot be validated: {exc}"
-        ) from exc
+        raise CleanupStateError(f"result archive cannot be validated: {exc}") from exc
 
 
 def _new_pending_cleanup(
@@ -591,9 +584,7 @@ def _continue_pending_cleanup(
         source = Path(str(entry.get("path")))
         expected_source = expected_sources[name]
         if source.resolve() != expected_source.resolve():
-            raise CleanupStateError(
-                f"pending {name} archive path is unsafe: {source}"
-            )
+            raise CleanupStateError(f"pending {name} archive path is unsafe: {source}")
         staging_path = _validated_staging_path(
             project,
             entry,
@@ -612,9 +603,8 @@ def _continue_pending_cleanup(
                 staging_path.unlink()
             entry["deleted"] = True
             entry["staged"] = False
-            cleanup["reclaimed_bytes"] = (
-                int(cleanup.get("reclaimed_bytes", 0))
-                + int(entry["size_bytes"])
+            cleanup["reclaimed_bytes"] = int(cleanup.get("reclaimed_bytes", 0)) + int(
+                entry["size_bytes"]
             )
             cleanup["stage"] = f"deleted-{name}"
             _write_state(project, state, f"record-deleted-{name}")
@@ -625,9 +615,7 @@ def _continue_pending_cleanup(
             cleanup["stage"] = f"delete-staged-{name}"
             cleanup["error"] = str(exc)
             _write_state(project, state, f"record-delete-{name}-failure")
-            raise CleanupExecutionError(
-                f"delete-staged-{name} failed: {exc}"
-            ) from exc
+            raise CleanupExecutionError(f"delete-staged-{name} failed: {exc}") from exc
 
     completed_at = utc_now()
     try:
@@ -692,9 +680,8 @@ def _update_manifest_cleanup(
 ) -> None:
     package_manifest = _required_mapping(manifest, "package", "manifest")
     package_manifest["path"] = None
-    if (
-        archives["package"].get("delete_requested") is True
-        or not isinstance(package_manifest.get("archive_cleanup"), dict)
+    if archives["package"].get("delete_requested") is True or not isinstance(
+        package_manifest.get("archive_cleanup"), dict
     ):
         package_manifest["archive_cleanup"] = _manifest_cleanup_entry(
             archives["package"],
@@ -703,9 +690,8 @@ def _update_manifest_cleanup(
 
     results = _required_mapping(manifest, "results", "manifest")
     results["archive"] = None
-    if (
-        archives["result"].get("delete_requested") is True
-        or not isinstance(results.get("archive_cleanup"), dict)
+    if archives["result"].get("delete_requested") is True or not isinstance(
+        results.get("archive_cleanup"), dict
     ):
         results["archive_cleanup"] = _manifest_cleanup_entry(
             archives["result"],
@@ -728,12 +714,7 @@ def _manifest_cleanup_entry(
 
 def _validated_relative_path(value: str, label: str) -> PurePosixPath:
     path = PurePosixPath(value)
-    if (
-        path.is_absolute()
-        or "\\" in value
-        or ".." in path.parts
-        or not path.parts
-    ):
+    if path.is_absolute() or "\\" in value or ".." in path.parts or not path.parts:
         raise CleanupStateError(f"{label} is invalid: {value}")
     return path
 

@@ -440,9 +440,7 @@ def _write_planned(project: WorkflowProject) -> None:
         {
             "package_archive": project.default_package_path.name,
             "result_archive": project.default_result_archive_path.name,
-            "expected_results": [
-                f"{project.video_dir.name}/distorted_vmaf.json"
-            ],
+            "expected_results": [f"{project.video_dir.name}/distorted_vmaf.json"],
         },
     )
     project.remote_plan_script_path.write_text(

@@ -123,9 +123,7 @@ async def test_tui_resume_mode_prefills_bound_project(tmp_path: Path) -> None:
         json.dumps(
             {
                 "bilibili": {"bvid": "BV1xx411c7mD"},
-                "youtube": {
-                    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-                },
+                "youtube": {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
             }
         ),
         encoding="utf-8",
@@ -249,7 +247,9 @@ async def test_tui_rejects_empty_resume_project_on_setup_page(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_tui_batches_output_and_flushes_final_partial_line(tmp_path: Path) -> None:
+async def test_tui_batches_output_and_flushes_final_partial_line(
+    tmp_path: Path,
+) -> None:
     app = WorkflowTui(videos_dir=tmp_path / "videos")
 
     async with app.run_test(size=(120, 42)) as pilot:
