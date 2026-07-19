@@ -9,6 +9,7 @@ license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 dependencies = [
     "fastapi>=0.115.0",
     "lxml>=6.1.1",
+    "opencv-python-headless>=5.0.0.93",
     "orjson>=3.10.0",
     "textual>=6.6,<7",
     "uvicorn[standard]>=0.30.0",
@@ -37,7 +38,6 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "httpx2>=2.5.0",
-    "opencv-python-headless>=5.0.0.93",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.0.0",
 ]

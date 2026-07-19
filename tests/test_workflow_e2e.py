@@ -90,7 +90,30 @@ def test_workflow_runs_from_download_through_cleanup_and_viewer_scan(
             "fps": 30.0,
             "codec": "h264",
             "container": "mov,mp4",
+            "sample_aspect_ratio": "1:1",
+            "display_aspect_ratio": "16:9",
+            "rotation": 0,
         },
+    )
+
+    class AbsentDetection:
+        state = "absent"
+        normalized_edges = None
+        analysis_width = 960
+        analysis_height = 540
+
+        @staticmethod
+        def to_summary():
+            return {
+                "state": "absent",
+                "normalized_edges": None,
+                "distorted": {"path": "distorted.mp4"},
+                "reference": {"path": "reference.mp4"},
+            }
+
+    monkeypatch.setattr(
+        "vmaf_workflow.prepare.detect_watermark",
+        lambda *_args: AbsentDetection(),
     )
 
     assert main(

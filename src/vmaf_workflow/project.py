@@ -48,6 +48,14 @@ class WorkflowProject:
         return self.workflow_dir / "media-inventory.json"
 
     @property
+    def watermark_analysis_dir(self) -> Path:
+        return self.workflow_dir / "watermark-analysis"
+
+    @property
+    def watermark_summary_path(self) -> Path:
+        return self.watermark_analysis_dir / "summary.json"
+
+    @property
     def package_manifest_path(self) -> Path:
         return self.workflow_dir / "package-manifest.json"
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shlex
 from dataclasses import dataclass
@@ -11,6 +12,13 @@ from typing import Any
 from vmaf_workflow.config import EasyVmafSettings
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.project import WorkflowProject
+from vmaf_workflow.remote_state import sha256_file
+from vmaf_workflow.watermark_detection import (
+    WatermarkGeometryError,
+    map_normalized_edges,
+    map_real_edges_to_target,
+    outward_bbox,
+)
 
 
 class RemotePlanError(ValueError):
@@ -18,6 +26,12 @@ class RemotePlanError(ValueError):
 
 
 RESULT_PROVENANCE_NAME = "vmaf-workflow-provenance.json"
+REMOTE_PLAN_SCHEMA_VERSION = 2
+WATERMARK_MAPPING_CONTRACT = "normalized-real-easyvmaf-v1"
+MODEL_TARGETS = {
+    "HD": (1920, 1080, 8),
+    "4K": (3840, 2160, 16),
+}
 
 
 @dataclass(frozen=True)
@@ -27,6 +41,9 @@ class PlannedCommand:
     model: str
     argv: list[str]
     expected_result: str
+    target_resolution: dict[str, int]
+    excluded_bbox: dict[str, int] | None
+    pre_filter: str | None
 
     def to_manifest(self) -> dict[str, Any]:
         return {
@@ -35,6 +52,9 @@ class PlannedCommand:
             "model": self.model,
             "command": self.argv,
             "expected_result": self.expected_result,
+            "target_resolution": self.target_resolution,
+            "excluded_bbox": self.excluded_bbox,
+            "pre_filter": self.pre_filter,
         }
 
 
@@ -64,20 +84,34 @@ def write_remote_plan(
         )
     package_archive = validate_package_inputs(project, inventory, package_manifest)
     result_archive = f"{project.video_dir.name}-json.tar.gz"
+    exclusions = _normalized_exclusions(inventory)
+    normalized_exclusion = exclusions[0]["normalized_edges"] if exclusions else None
 
     commands = [
-        _planned_command(project, settings, reference, distorted)
+        _planned_command(
+            project,
+            settings,
+            reference,
+            distorted,
+            normalized_exclusion,
+        )
         for distorted in distorted_entries
     ]
     _validate_unique_result_paths(commands)
     executable = settings.executable_path().as_posix()
     plan = {
+        "schema_version": REMOTE_PLAN_SCHEMA_VERSION,
+        "watermark_mapping_contract": WATERMARK_MAPPING_CONTRACT,
         "created_at": datetime.now(UTC).isoformat(),
         "project_dir": str(project.video_dir),
         "workflow_dir": str(project.workflow_dir),
         "easyvmaf_repo": settings.repo_dir.as_posix(),
         "easyvmaf_executable": executable,
         "package_archive": package_archive,
+        "inventory_sha256": package_manifest["inventory_sha256"],
+        "watermark_analysis_sha256": package_manifest.get(
+            "watermark_analysis_sha256"
+        ),
         "result_archive": result_archive,
         "result_provenance": RESULT_PROVENANCE_NAME,
         "environment_preflight_argument": "--environment-only",
@@ -86,14 +120,20 @@ def write_remote_plan(
             "ffmpeg": {
                 "minimum_major": settings.ffmpeg_min_major,
                 "required_filter": "libvmaf",
+                "required_filters": ["libvmaf", "drawbox"],
             },
             "ffprobe": {"minimum_major": settings.ffmpeg_min_major},
             "easyvmaf": {
                 "repo": settings.repo_dir.as_posix(),
                 "executable": executable,
                 "required_branch": settings.required_branch,
+                "required_option": "-pre_filter",
             },
         },
+        "score_scope": (
+            "content_excluding_regions" if exclusions else "full_frame"
+        ),
+        "content_exclusions": exclusions,
         "reference": reference,
         "commands": [command.to_manifest() for command in commands],
         "expected_results": [command.expected_result for command in commands],
@@ -119,8 +159,12 @@ def _planned_command(
     settings: EasyVmafSettings,
     reference: dict[str, Any],
     distorted: dict[str, Any],
+    normalized_exclusion: dict[str, float] | None,
 ) -> PlannedCommand:
     model = _model_for_distorted(distorted, settings)
+    target_width, target_height, margin = MODEL_TARGETS[model]
+    excluded_bbox: dict[str, int] | None = None
+    pre_filter: str | None = None
     argv = [
         settings.executable_path().as_posix(),
         "-d",
@@ -131,6 +175,21 @@ def _planned_command(
     if settings.endsync:
         argv.append("-endsync")
     argv.extend(["-model", model, "-output_fmt", settings.output_fmt])
+    if normalized_exclusion is not None:
+        excluded_bbox = _target_exclusion_bbox(
+            normalized_exclusion,
+            distorted,
+            reference,
+            target_width,
+            target_height,
+            margin,
+        )
+        pre_filter = (
+            f"drawbox=x={excluded_bbox['x']}:y={excluded_bbox['y']}:"
+            f"w={excluded_bbox['width']}:h={excluded_bbox['height']}:"
+            "color=black:t=fill"
+        )
+        argv.extend(["-pre_filter", pre_filter])
     if settings.threads is not None:
         if settings.threads < 1:
             raise RemotePlanError("easyVmaf threads must be greater than 0")
@@ -146,7 +205,71 @@ def _planned_command(
         model=model,
         argv=argv,
         expected_result=expected_result,
+        target_resolution={"width": target_width, "height": target_height},
+        excluded_bbox=excluded_bbox,
+        pre_filter=pre_filter,
     )
+
+
+def _target_exclusion_bbox(
+    normalized_edges: dict[str, float],
+    distorted: dict[str, Any],
+    reference: dict[str, Any],
+    target_width: int,
+    target_height: int,
+    margin: int,
+) -> dict[str, int]:
+    distorted_target = _entry_edges_in_target(
+        normalized_edges, distorted, target_width, target_height
+    )
+    reference_target = _entry_edges_in_target(
+        normalized_edges, reference, target_width, target_height
+    )
+    for name in ("left", "top", "right", "bottom"):
+        if not math.isclose(
+            distorted_target[name],
+            reference_target[name],
+            rel_tol=0.0,
+            abs_tol=1e-7,
+        ):
+            raise RemotePlanError(
+                "distorted and reference watermark mappings disagree in "
+                f"easyVmaf target space at {name}"
+            )
+    try:
+        return outward_bbox(
+            distorted_target,
+            target_width,
+            target_height,
+            margin,
+        )
+    except WatermarkGeometryError as exc:
+        raise RemotePlanError(str(exc)) from exc
+
+
+def _entry_edges_in_target(
+    normalized_edges: dict[str, float],
+    entry: dict[str, Any],
+    target_width: int,
+    target_height: int,
+) -> dict[str, float]:
+    width = entry.get("width")
+    height = entry.get("height")
+    if not isinstance(width, int) or not isinstance(height, int):
+        raise RemotePlanError(
+            f"watermark mapping requires media dimensions: {entry.get('path')}"
+        )
+    try:
+        real_edges = map_normalized_edges(normalized_edges, width, height)
+        return map_real_edges_to_target(
+            real_edges,
+            width,
+            height,
+            target_width,
+            target_height,
+        )
+    except WatermarkGeometryError as exc:
+        raise RemotePlanError(str(exc)) from exc
 
 
 def _model_for_distorted(
@@ -200,6 +323,37 @@ def _single_role_entry(inventory: dict[str, Any], role: str) -> dict[str, Any]:
     return entries[0]
 
 
+def _normalized_exclusions(
+    inventory: dict[str, Any],
+) -> list[dict[str, Any]]:
+    raw_exclusions = inventory.get("content_exclusions", [])
+    if not isinstance(raw_exclusions, list):
+        raise RemotePlanError("media-inventory content_exclusions must be a list")
+    if not raw_exclusions:
+        return []
+    if len(raw_exclusions) != 1 or not isinstance(raw_exclusions[0], dict):
+        raise RemotePlanError("remote-plan supports exactly one content exclusion")
+    exclusion = raw_exclusions[0]
+    if exclusion.get("kind") != "bilibili_watermark":
+        raise RemotePlanError("unsupported content exclusion kind")
+    edges = exclusion.get("normalized_edges")
+    if not isinstance(edges, dict):
+        raise RemotePlanError("content exclusion normalized_edges are required")
+    try:
+        map_normalized_edges(edges, 1, 1)
+    except WatermarkGeometryError as exc:
+        raise RemotePlanError(str(exc)) from exc
+    return [
+        {
+            "kind": "bilibili_watermark",
+            "normalized_edges": {
+                name: float(edges[name])
+                for name in ("left", "top", "right", "bottom")
+            },
+        }
+    ]
+
+
 def _validate_project_relative_path(relative_path: str) -> None:
     pure_path = PurePosixPath(relative_path)
     if (
@@ -236,6 +390,30 @@ def validate_package_inputs(
     if inventory_files != packaged_files:
         raise RemotePlanError(
             "package manifest does not match media inventory; rerun package"
+        )
+
+    inventory_sha256 = package_manifest.get("inventory_sha256")
+    if inventory_sha256 != sha256_file(project.media_inventory_path):
+        raise RemotePlanError(
+            "package inventory SHA-256 does not match media inventory; rerun package"
+        )
+    detection = inventory.get("watermark_detection")
+    watermark_applicable = (
+        isinstance(detection, dict) and detection.get("applicable") is True
+    )
+    analysis_sha256 = package_manifest.get("watermark_analysis_sha256")
+    if watermark_applicable:
+        if not project.watermark_summary_path.is_file():
+            raise RemotePlanError(
+                "watermark analysis summary is missing; rerun prepare"
+            )
+        if analysis_sha256 != sha256_file(project.watermark_summary_path):
+            raise RemotePlanError(
+                "package watermark analysis SHA-256 does not match; rerun package"
+            )
+    elif analysis_sha256 is not None:
+        raise RemotePlanError(
+            "package has unexpected watermark analysis hash; rerun package"
         )
 
     package_path = Path(archive_path)
@@ -400,6 +578,10 @@ def _write_script(
             '|| die "ffmpeg does not provide the required libvmaf filter"'
         ),
         (
+            "ffmpeg -hide_banner -h filter=drawbox >/dev/null 2>&1 "
+            '|| die "ffmpeg does not provide the required drawbox filter"'
+        ),
+        (
             'git -C "$EASYVMAF_REPO" rev-parse --is-inside-work-tree '
             '>/dev/null 2>&1 || die "easyVmaf repo is not a Git work tree: '
             '$EASYVMAF_REPO"'
@@ -424,8 +606,12 @@ def _write_script(
             '$EASYVMAF_EXECUTABLE"'
         ),
         (
-            '"$EASYVMAF_EXECUTABLE" --help >/dev/null 2>&1 '
+            'easyvmaf_help=$("$EASYVMAF_EXECUTABLE" --help 2>&1) '
             '|| die "easyVmaf executable failed its help check"'
+        ),
+        (
+            '[[ "$easyvmaf_help" == *"-pre_filter"* ]] '
+            '|| die "easyVmaf does not provide required -pre_filter option"'
         ),
         'if [[ $MODE == --environment-only ]]; then',
         '  info "environment preflight complete"',

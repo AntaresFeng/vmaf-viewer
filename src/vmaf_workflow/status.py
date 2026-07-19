@@ -8,6 +8,11 @@ from typing import Any
 
 from vmaf_workflow.prepare import EXCLUDED_DIR_NAMES, MEDIA_SUFFIXES
 from vmaf_workflow.project import WorkflowProject
+from vmaf_workflow.remote_state import sha256_file
+from vmaf_workflow.watermark_detection import (
+    WatermarkGeometryError,
+    map_normalized_edges,
+)
 
 
 class WorkflowStatusError(ValueError):
@@ -67,6 +72,7 @@ def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
             _prepare_command(project),
         )
 
+    _validate_watermark_inventory(project, inventory)
     missing_media = _inventory_missing_media(project, inventory)
     if missing_media:
         return _report(
@@ -81,6 +87,8 @@ def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
     package_archive = _package_archive_path(project, package_manifest)
     package_missing: list[str] = []
     if package_manifest is None:
+        package_missing.append(str(project.package_manifest_path))
+    elif not _package_hashes_match(project, inventory, package_manifest):
         package_missing.append(str(project.package_manifest_path))
     if package_archive is None:
         package_archive = project.default_package_path
@@ -114,7 +122,16 @@ def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
             (project.remote_plan_path, remote_plan),
             (project.remote_plan_script_path, project.remote_plan_script_path),
         )
-        if value is None or not path.is_file()
+        if value is None
+        or not path.is_file()
+        or (
+            path == project.remote_plan_path
+            and remote_plan is not None
+            and package_manifest is not None
+            and not _remote_plan_matches_inputs(
+                remote_plan, inventory, package_manifest
+            )
+        )
     )
     if plan_missing:
         return _report(
@@ -333,6 +350,176 @@ def _safe_relative_path(value: str, label: str) -> PurePosixPath:
     if path.is_absolute() or "\\" in value or ".." in path.parts or not path.parts:
         raise WorkflowStatusError(f"{label} is invalid: {value}")
     return path
+
+
+def _validate_watermark_inventory(
+    project: WorkflowProject,
+    inventory: dict[str, Any],
+) -> None:
+    detection = inventory.get("watermark_detection")
+    if detection is None:
+        return
+    if not isinstance(detection, dict):
+        raise WorkflowStatusError("watermark_detection must be an object")
+    applicable = detection.get("applicable")
+    if not isinstance(applicable, bool):
+        raise WorkflowStatusError("watermark_detection applicable must be boolean")
+    exclusions = inventory.get("content_exclusions")
+    if not isinstance(exclusions, list):
+        raise WorkflowStatusError("content_exclusions must be a list")
+    state = detection.get("state")
+    if not applicable:
+        if state != "not_applicable" or exclusions:
+            raise WorkflowStatusError(
+                "non-applicable watermark detection must have state "
+                "not_applicable and no exclusions"
+            )
+        return
+    if state not in {"present", "absent"}:
+        raise WorkflowStatusError(
+            "applicable watermark detection state must be present or absent"
+        )
+    representative = detection.get("representative")
+    if not isinstance(representative, dict):
+        raise WorkflowStatusError(
+            "applicable watermark detection must contain representative"
+        )
+    representative_path = representative.get("path")
+    if not isinstance(representative_path, str):
+        raise WorkflowStatusError("watermark representative path is invalid")
+    relative = _safe_relative_path(
+        representative_path, "watermark representative path"
+    )
+    if not project.video_dir.joinpath(*relative.parts).is_file():
+        raise WorkflowStatusError(
+            f"watermark representative is missing: {representative_path}"
+        )
+    inventory_files = inventory.get("files")
+    representative_entries = (
+        [
+            entry
+            for entry in inventory_files
+            if isinstance(entry, dict)
+            and entry.get("path") == representative_path
+            and entry.get("role") == "distorted"
+        ]
+        if isinstance(inventory_files, list)
+        else []
+    )
+    if len(representative_entries) != 1:
+        raise WorkflowStatusError(
+            "watermark representative must be one distorted inventory file"
+        )
+    representative_entry = representative_entries[0]
+    for dimension in ("width", "height"):
+        value = representative.get(dimension)
+        if (
+            not isinstance(value, int)
+            or value <= 0
+            or value != representative_entry.get(dimension)
+        ):
+            raise WorkflowStatusError(
+                f"watermark representative {dimension} is invalid"
+            )
+    analysis = detection.get("analysis")
+    if not isinstance(analysis, dict):
+        raise WorkflowStatusError(
+            "applicable watermark detection must contain analysis"
+        )
+    for dimension in ("width", "height"):
+        value = analysis.get(dimension)
+        if not isinstance(value, int) or value <= 0:
+            raise WorkflowStatusError(
+                f"watermark analysis {dimension} is invalid"
+            )
+    summary_path = analysis.get("summary_path")
+    expected_summary = ".workflow/watermark-analysis/summary.json"
+    if summary_path != expected_summary:
+        raise WorkflowStatusError(
+            f"watermark summary_path must be {expected_summary}"
+        )
+    summary = load_optional_json_object(
+        project.watermark_summary_path,
+        "watermark-analysis/summary.json",
+    )
+    if summary is None:
+        raise WorkflowStatusError(
+            f"watermark analysis summary is required: {project.watermark_summary_path}"
+        )
+    if summary.get("state") != state:
+        raise WorkflowStatusError(
+            "watermark analysis summary state does not match inventory"
+        )
+    if state == "absent":
+        if exclusions:
+            raise WorkflowStatusError(
+                "absent watermark detection must not contain exclusions"
+            )
+        return
+    if len(exclusions) != 1 or not isinstance(exclusions[0], dict):
+        raise WorkflowStatusError(
+            "present watermark detection requires exactly one exclusion"
+        )
+    exclusion = exclusions[0]
+    if exclusion.get("kind") != "bilibili_watermark":
+        raise WorkflowStatusError("watermark exclusion kind is invalid")
+    edges = exclusion.get("normalized_edges")
+    if not isinstance(edges, dict):
+        raise WorkflowStatusError("watermark normalized_edges must be an object")
+    try:
+        map_normalized_edges(edges, 1, 1)
+    except WatermarkGeometryError as exc:
+        raise WorkflowStatusError(str(exc)) from exc
+    if summary.get("normalized_edges") != edges:
+        raise WorkflowStatusError(
+            "watermark analysis summary edges do not match inventory"
+        )
+
+
+def _package_hashes_match(
+    project: WorkflowProject,
+    inventory: dict[str, Any],
+    package_manifest: dict[str, Any],
+) -> bool:
+    if package_manifest.get("inventory_sha256") != sha256_file(
+        project.media_inventory_path
+    ):
+        return False
+    detection = inventory.get("watermark_detection")
+    applicable = isinstance(detection, dict) and detection.get("applicable") is True
+    analysis_hash = package_manifest.get("watermark_analysis_sha256")
+    if not applicable:
+        return analysis_hash is None
+    if not project.watermark_summary_path.is_file():
+        return False
+    return analysis_hash == sha256_file(project.watermark_summary_path)
+
+
+def _remote_plan_matches_inputs(
+    remote_plan: dict[str, Any],
+    inventory: dict[str, Any],
+    package_manifest: dict[str, Any],
+) -> bool:
+    if remote_plan.get("schema_version") != 2:
+        return False
+    if (
+        remote_plan.get("watermark_mapping_contract")
+        != "normalized-real-easyvmaf-v1"
+    ):
+        return False
+    if remote_plan.get("inventory_sha256") != package_manifest.get(
+        "inventory_sha256"
+    ):
+        return False
+    if remote_plan.get("watermark_analysis_sha256") != package_manifest.get(
+        "watermark_analysis_sha256"
+    ):
+        return False
+    exclusions = inventory.get("content_exclusions", [])
+    if remote_plan.get("content_exclusions", []) != exclusions:
+        return False
+    expected_scope = "content_excluding_regions" if exclusions else "full_frame"
+    return remote_plan.get("score_scope") == expected_scope
 
 
 def _package_archive_path(

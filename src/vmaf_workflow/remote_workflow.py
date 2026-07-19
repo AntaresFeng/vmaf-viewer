@@ -11,7 +11,9 @@ from vmaf_workflow.config import RemoteSettings
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.project import WorkflowProject
 from vmaf_workflow.remote_plan import (
+    REMOTE_PLAN_SCHEMA_VERSION,
     RESULT_PROVENANCE_NAME,
+    WATERMARK_MAPPING_CONTRACT,
     RemotePlanError,
     validate_package_inputs,
 )
@@ -98,6 +100,8 @@ def upload_project(
         "plan_sha256": plan_sha256,
         "package_sha256": package_sha256,
         "script_sha256": script_sha256,
+        "score_scope": plan.get("score_scope"),
+        "content_exclusions": plan.get("content_exclusions", []),
     }
     write_manifest(project.remote_provenance_path, provenance)
     provenance_sha256 = sha256_file(project.remote_provenance_path)
@@ -131,6 +135,8 @@ def upload_project(
             "path": str(project.remote_plan_path),
             "created_at": plan.get("created_at"),
             "sha256": plan_sha256,
+            "score_scope": plan.get("score_scope"),
+            "content_exclusions": plan.get("content_exclusions", []),
         },
         "upload": {
             "status": "running",
@@ -672,6 +678,15 @@ def _validate_plan_against_inventory(
     plan: dict[str, Any],
     inventory: dict[str, Any],
 ) -> None:
+    if plan.get("schema_version") != REMOTE_PLAN_SCHEMA_VERSION:
+        raise RemoteWorkflowError(
+            "remote plan schema is unsupported; rerun remote-plan"
+        )
+    if plan.get("watermark_mapping_contract") != WATERMARK_MAPPING_CONTRACT:
+        raise RemoteWorkflowError(
+            "remote plan watermark mapping contract is unsupported; "
+            "rerun remote-plan"
+        )
     inventory_files = inventory.get("files")
     if not isinstance(inventory_files, list):
         raise RemoteWorkflowError(
@@ -747,6 +762,20 @@ def _validate_plan_against_inventory(
     if plan.get("expected_results") != command_results:
         raise RemoteWorkflowError(
             "remote plan expected_results do not match commands; "
+            "rerun remote-plan"
+        )
+    inventory_exclusions = inventory.get("content_exclusions", [])
+    if plan.get("content_exclusions", []) != inventory_exclusions:
+        raise RemoteWorkflowError(
+            "remote plan content exclusions do not match media inventory; "
+            "rerun remote-plan"
+        )
+    expected_scope = (
+        "content_excluding_regions" if inventory_exclusions else "full_frame"
+    )
+    if plan.get("score_scope") != expected_scope:
+        raise RemoteWorkflowError(
+            "remote plan score scope does not match media inventory; "
             "rerun remote-plan"
         )
 
@@ -831,6 +860,16 @@ def _validate_result_provenance(
     if provenance.get("plan_sha256") != plan_state.get("sha256"):
         raise RemoteWorkflowError(
             "result provenance plan SHA-256 does not match"
+        )
+    if provenance.get("score_scope") != plan_state.get("score_scope"):
+        raise RemoteWorkflowError(
+            "result provenance score scope does not match remote state"
+        )
+    if provenance.get("content_exclusions") != plan_state.get(
+        "content_exclusions"
+    ):
+        raise RemoteWorkflowError(
+            "result provenance exclusions do not match remote state"
         )
     for artifact, key in (
         ("package", "package_sha256"),

@@ -780,6 +780,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "lxml" },
     { name = "natsort" },
+    { name = "opencv-python-headless" },
     { name = "orjson" },
     { name = "textual" },
     { name = "uvicorn", extra = ["standard"] },
@@ -788,7 +789,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx2" },
-    { name = "opencv-python-headless" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -798,6 +798,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "lxml", specifier = ">=6.1.1" },
     { name = "natsort", specifier = ">=8.4.0" },
+    { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
     { name = "orjson", specifier = ">=3.10.0" },
     { name = "textual", specifier = ">=6.6,<7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
@@ -806,7 +807,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx2", specifier = ">=2.5.0" },
-    { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
 ]

@@ -12,6 +12,7 @@ from vmaf_workflow.config import EasyVmafSettings, RemoteSettings
 from vmaf_workflow.models import CommandResult
 from vmaf_workflow.project import WorkflowProject
 from vmaf_workflow.remote_plan import write_remote_plan
+from vmaf_workflow.remote_state import sha256_file
 from vmaf_workflow.remote_workflow import (
     RemoteCommandError,
     RemoteRunInterrupted,
@@ -177,7 +178,7 @@ def test_prepare_copies_external_reference_and_preserves_manifest(
     external_reference.write_bytes(b"external-ref")
     (project_dir / "encode.mkv").write_bytes(b"distorted")
     (workflow_dir / "manifest.json").write_text(
-        json.dumps({"bilibili": {"bvid": "BV1xx411c7mD"}}),
+        json.dumps({"keep": "existing"}),
         encoding="utf-8",
     )
 
@@ -203,7 +204,7 @@ def test_prepare_copies_external_reference_and_preserves_manifest(
     assert files["encode.mkv"]["role"] == "distorted"
 
     manifest = json.loads((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["bilibili"] == {"bvid": "BV1xx411c7mD"}
+    assert manifest["keep"] == "existing"
     assert manifest["reference"] == {"path": "source-reference.mov"}
     assert manifest["media_inventory"] == str(workflow_dir / "media-inventory.json")
 
@@ -815,6 +816,7 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
         encoding="utf-8",
     )
     (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+    _add_package_inventory_hash(workflow_dir)
     (workflow_dir / "manifest.json").write_text(
         json.dumps({"keep": "existing"}),
         encoding="utf-8",
@@ -850,12 +852,17 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert remote_plan["environment_preflight_argument"] == "--environment-only"
     assert remote_plan["preflight_argument"] == "--preflight-only"
     assert remote_plan["requirements"] == {
-        "ffmpeg": {"minimum_major": 5, "required_filter": "libvmaf"},
+        "ffmpeg": {
+            "minimum_major": 5,
+            "required_filter": "libvmaf",
+            "required_filters": ["libvmaf", "drawbox"],
+        },
         "ffprobe": {"minimum_major": 5},
         "easyvmaf": {
             "repo": "/opt/easy Vmaf",
             "executable": "/opt/easy Vmaf/.venv/bin/easyvmaf",
             "required_branch": "master",
+            "required_option": "-pre_filter",
         },
     }
     assert remote_plan["reference"]["path"] == "ref movie.mp4"
@@ -893,12 +900,14 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert "check_version ffmpeg 5" in script
     assert "check_version ffprobe 5" in script
     assert "ffmpeg -hide_banner -h filter=libvmaf" in script
+    assert "ffmpeg -hide_banner -h filter=drawbox" in script
     assert "EASYVMAF_REPO='/opt/easy Vmaf'" in script
     assert "EASYVMAF_EXECUTABLE='/opt/easy Vmaf/.venv/bin/easyvmaf'" in script
     assert "EASYVMAF_REQUIRED_BRANCH=master" in script
     assert 'MODE=${1:-run}' in script
     assert 'usage: $0 [--environment-only|--preflight-only]' in script
-    assert '"$EASYVMAF_EXECUTABLE" --help' in script
+    assert 'easyvmaf_help=$("$EASYVMAF_EXECUTABLE" --help' in script
+    assert "easyVmaf does not provide required -pre_filter option" in script
     assert (
         'git -C "$EASYVMAF_REPO" symbolic-ref --quiet --short HEAD'
         in script
@@ -979,6 +988,7 @@ def test_remote_plan_includes_configured_easyvmaf_threads(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+    _add_package_inventory_hash(workflow_dir)
 
     plan = write_remote_plan(
         WorkflowProject(video_dir=project_dir, workflow_dir=workflow_dir),
@@ -1020,6 +1030,7 @@ def test_remote_plan_includes_configured_easyvmaf_branch(tmp_path: Path) -> None
         encoding="utf-8",
     )
     (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+    _add_package_inventory_hash(workflow_dir)
 
     plan = write_remote_plan(
         WorkflowProject(video_dir=project_dir, workflow_dir=workflow_dir),
@@ -1066,6 +1077,7 @@ def test_remote_plan_rejects_package_manifest_that_does_not_match_inventory(
         encoding="utf-8",
     )
     (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+    _add_package_inventory_hash(workflow_dir)
 
     result = main(["remote-plan", "--project-dir", str(project_dir)])
 
@@ -1134,6 +1146,7 @@ def test_remote_plan_rejects_colliding_result_paths(tmp_path: Path, capsys) -> N
         encoding="utf-8",
     )
     (workflow_dir / "video0-inputs.tar").write_bytes(b"package")
+    _add_package_inventory_hash(workflow_dir)
 
     result = main(["remote-plan", "--project-dir", str(project_dir)])
 
@@ -1687,6 +1700,15 @@ def test_download_rechecks_bilibili_info_once_for_all_planned_streams(
         "0\n",
         "1\n",
     ]
+
+
+def _add_package_inventory_hash(workflow_dir: Path) -> None:
+    manifest_path = workflow_dir / "package-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["inventory_sha256"] = sha256_file(
+        workflow_dir / "media-inventory.json"
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def _write_after_video_metadata(argv, payload: str) -> None:

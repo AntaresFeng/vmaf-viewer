@@ -364,9 +364,11 @@ def test_upload_completes_and_records_remote_target_and_hashes(
         "schema_version": 1,
         "project": "video0",
         "plan_sha256": state["plan"]["sha256"],
-        "package_sha256": state["upload"]["package"]["sha256"],
-        "script_sha256": state["upload"]["script"]["sha256"],
-    }
+            "package_sha256": state["upload"]["package"]["sha256"],
+            "script_sha256": state["upload"]["script"]["sha256"],
+            "score_scope": "full_frame",
+            "content_exclusions": [],
+        }
     manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
     assert manifest["remote_workflow"] == {
         "state": str(project.remote_state_path)
@@ -1028,6 +1030,9 @@ def _write_remote_project(tmp_path: Path) -> WorkflowProject:
             {
                 "archive_path": str(package_path),
                 "archive_root": "video0",
+                "inventory_sha256": sha256_file(
+                    project.media_inventory_path
+                ),
                 "media_files": [
                     {"path": "ref.mp4", "role": "reference", "size_bytes": 1},
                     {"path": "dist.mp4", "role": "distorted", "size_bytes": 1},
@@ -1039,12 +1044,16 @@ def _write_remote_project(tmp_path: Path) -> WorkflowProject:
     project.remote_plan_path.write_text(
         json.dumps(
             {
+                "schema_version": 2,
+                "watermark_mapping_contract": "normalized-real-easyvmaf-v1",
                 "created_at": "2026-07-16T00:00:00+00:00",
                 "package_archive": "video0-inputs.tar",
                 "result_archive": "video0-json.tar.gz",
                 "result_provenance": "vmaf-workflow-provenance.json",
                 "environment_preflight_argument": "--environment-only",
                 "preflight_argument": "--preflight-only",
+                "score_scope": "full_frame",
+                "content_exclusions": [],
                 "reference": {"path": "ref.mp4"},
                 "commands": [
                     {
@@ -1084,6 +1093,9 @@ def _add_second_distorted(project: WorkflowProject) -> None:
         project.package_manifest_path.read_text(encoding="utf-8")
     )
     package_manifest["media_files"].append(second)
+    package_manifest["inventory_sha256"] = sha256_file(
+        project.media_inventory_path
+    )
     project.package_manifest_path.write_text(
         json.dumps(package_manifest),
         encoding="utf-8",

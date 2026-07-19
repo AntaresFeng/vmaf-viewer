@@ -1,25 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import numpy as np
 
 
-SCRIPT_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "devscripts"
-    / "explore_watermark_detection.py"
-)
-SPEC = importlib.util.spec_from_file_location(
-    "explore_watermark_detection", SCRIPT_PATH
-)
-assert SPEC is not None
-assert SPEC.loader is not None
-watermark_detection = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = watermark_detection
-SPEC.loader.exec_module(watermark_detection)
+from vmaf_workflow import watermark_detection
 
 MediaInfo = watermark_detection.MediaInfo
 analyze_samples = watermark_detection.analyze_samples

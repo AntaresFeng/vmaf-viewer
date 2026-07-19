@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from vmaf_workflow.download_state import DownloadStateError, invalidate_downstream
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.project import WorkflowProject
+from vmaf_workflow.watermark_detection import (
+    DETECTOR_NAME,
+    WatermarkDetectionError,
+    WatermarkGeometryError,
+    detect_watermark,
+    map_normalized_edges,
+    outward_bbox,
+    write_summary,
+)
 
 
 MEDIA_SUFFIXES = {".mkv", ".mov", ".mp4", ".webm"}
@@ -26,8 +37,25 @@ def prepare_project(project: WorkflowProject, reference_path: Path) -> dict[str,
     if not any(entry["path"] == reference_rel for entry in inventory["files"]):
         raise PrepareError(f"reference is not a supported media file: {reference}")
 
+    manifest = _load_existing_manifest(project.manifest_path)
+    stale_result_paths = _recorded_local_vmaf_results(project, manifest)
+    try:
+        invalidate_downstream(project, manifest)
+    except DownloadStateError as exc:
+        raise PrepareError(str(exc)) from exc
+    write_manifest(project.manifest_path, manifest)
+    _remove_watermark_analysis(project)
+    watermark_detection, exclusions = _prepare_watermark_detection(
+        project,
+        inventory,
+        manifest,
+        reference_rel,
+        stale_result_paths,
+    )
+    inventory["watermark_detection"] = watermark_detection
+    inventory["content_exclusions"] = exclusions
     write_manifest(project.media_inventory_path, inventory)
-    update_manifest_pointers(project, reference_rel)
+    update_manifest_pointers(project, reference_rel, manifest)
     return inventory
 
 
@@ -46,8 +74,16 @@ def build_media_inventory(
     }
 
 
-def update_manifest_pointers(project: WorkflowProject, reference_rel: str) -> None:
-    manifest = _load_existing_manifest(project.manifest_path)
+def update_manifest_pointers(
+    project: WorkflowProject,
+    reference_rel: str,
+    manifest: dict[str, Any] | None = None,
+) -> None:
+    manifest = (
+        _load_existing_manifest(project.manifest_path)
+        if manifest is None
+        else manifest
+    )
     manifest["project_dir"] = str(project.video_dir)
     manifest["workflow_dir"] = str(project.workflow_dir)
     manifest["reference"] = {"path": reference_rel}
@@ -105,7 +141,11 @@ def _probe_media(path: Path) -> dict[str, Any]:
                 "-select_streams",
                 "v:0",
                 "-show_entries",
-                "stream=codec_name,width,height,avg_frame_rate",
+                (
+                    "stream=codec_name,width,height,avg_frame_rate,"
+                    "sample_aspect_ratio,display_aspect_ratio:"
+                    "stream_tags=rotate:stream_side_data=rotation"
+                ),
                 "-show_entries",
                 "format=format_name",
                 "-of",
@@ -155,7 +195,278 @@ def _probe_media(path: Path) -> dict[str, Any]:
     if isinstance(format_name, str) and format_name:
         metadata["container"] = format_name
 
+    sample_aspect_ratio = _ratio_string(stream.get("sample_aspect_ratio"))
+    display_aspect_ratio = _ratio_string(stream.get("display_aspect_ratio"))
+    metadata["sample_aspect_ratio"] = sample_aspect_ratio
+    metadata["display_aspect_ratio"] = display_aspect_ratio
+    metadata["rotation"] = _rotation(stream)
+
     return metadata
+
+
+def _prepare_watermark_detection(
+    project: WorkflowProject,
+    inventory: dict[str, Any],
+    manifest: dict[str, Any],
+    reference_rel: str,
+    stale_result_paths: list[Path],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    bvid = _manifest_bvid(manifest)
+    if bvid is None:
+        return (
+            {
+                "applicable": False,
+                "state": "not_applicable",
+                "detector": DETECTOR_NAME,
+            },
+            [],
+        )
+
+    files = inventory["files"]
+    representative = select_bilibili_representative(files, bvid)
+    _validate_watermark_geometry(files, representative)
+    reference = next(entry for entry in files if entry["path"] == reference_rel)
+    try:
+        result = detect_watermark(
+            project.video_dir / representative["path"],
+            project.video_dir / reference_rel,
+            project.watermark_analysis_dir,
+        )
+    except (WatermarkDetectionError, WatermarkGeometryError) as exc:
+        raise PrepareError(str(exc)) from exc
+
+    summary = result.to_summary()
+    summary["distorted"]["path"] = representative["path"]
+    summary["reference"]["path"] = reference["path"]
+    normalized_edges = result.normalized_edges
+    media_mappings: list[dict[str, Any]] = []
+    if normalized_edges is not None:
+        for entry in files:
+            real_edges = map_normalized_edges(
+                normalized_edges,
+                entry["width"],
+                entry["height"],
+            )
+            audit_margin = entry["width"] * 8 / 1920
+            media_mappings.append(
+                {
+                    "path": entry["path"],
+                    "width": entry["width"],
+                    "height": entry["height"],
+                    "real_pixel_edges": real_edges,
+                    "audit_margin_pixels": audit_margin,
+                    "audit_bbox_with_margin": outward_bbox(
+                        real_edges,
+                        entry["width"],
+                        entry["height"],
+                        audit_margin,
+                    ),
+                }
+            )
+    summary["workflow"] = {
+        "representative_path": representative["path"],
+        "reference_path": reference["path"],
+        "normalized_edges": normalized_edges,
+        "media_mappings": media_mappings,
+    }
+    write_summary(project.watermark_summary_path, summary)
+
+    if result.state in {"present", "uncertain"}:
+        _remove_stale_local_vmaf_results(stale_result_paths)
+    if result.state == "uncertain":
+        raise PrepareError(
+            "watermark detection found multiple candidates; inspect "
+            f"{project.watermark_summary_path}"
+        )
+
+    detection = {
+        "applicable": True,
+        "state": result.state,
+        "detector": DETECTOR_NAME,
+        "representative": {
+            "path": representative["path"],
+            "width": representative["width"],
+            "height": representative["height"],
+        },
+        "reference": {
+            "path": reference["path"],
+            "width": reference["width"],
+            "height": reference["height"],
+        },
+        "analysis": {
+            "width": result.analysis_width,
+            "height": result.analysis_height,
+            "summary_path": _relative_posix(
+                project.watermark_summary_path, project.video_dir
+            ),
+        },
+    }
+    exclusions = []
+    if normalized_edges is not None:
+        exclusions.append(
+            {
+                "kind": "bilibili_watermark",
+                "normalized_edges": normalized_edges,
+            }
+        )
+    return detection, exclusions
+
+
+def select_bilibili_representative(
+    files: list[dict[str, Any]], bvid: str
+) -> dict[str, Any]:
+    prefix = f"{bvid}-"
+    candidates = [
+        entry
+        for entry in files
+        if entry.get("role") == "distorted"
+        and Path(str(entry.get("path", ""))).name.startswith(prefix)
+        and entry.get("height") == 1080
+        and entry.get("codec") == "h264"
+    ]
+    if len(candidates) != 1:
+        raise PrepareError(
+            "Bilibili watermark detection requires exactly one distorted "
+            f"1080p AVC file whose basename starts with {prefix!r}; "
+            f"found {len(candidates)}"
+        )
+    return candidates[0]
+
+
+def _validate_watermark_geometry(
+    files: list[dict[str, Any]], representative: dict[str, Any]
+) -> None:
+    representative_width = representative.get("width")
+    representative_height = representative.get("height")
+    if not isinstance(representative_width, int) or not isinstance(
+        representative_height, int
+    ):
+        raise PrepareError("watermark representative is missing decoded dimensions")
+    for entry in files:
+        path = entry.get("path", "<unknown>")
+        width = entry.get("width")
+        height = entry.get("height")
+        if not isinstance(width, int) or not isinstance(height, int):
+            raise PrepareError(f"watermark geometry is missing dimensions: {path}")
+        sample_aspect_ratio = entry.get("sample_aspect_ratio")
+        if sample_aspect_ratio not in {None, "1:1"}:
+            raise PrepareError(
+                f"watermark geometry requires square pixels: {path} has "
+                f"SAR {sample_aspect_ratio}"
+            )
+        rotation = entry.get("rotation", 0)
+        if rotation != 0:
+            raise PrepareError(
+                f"watermark geometry does not support rotation: {path} has "
+                f"rotation {rotation}"
+            )
+        if width * representative_height != height * representative_width:
+            raise PrepareError(
+                "watermark geometry requires the same decoded aspect ratio: "
+                f"{path} is {width}x{height}, representative is "
+                f"{representative_width}x{representative_height}"
+            )
+
+
+def _manifest_bvid(manifest: dict[str, Any]) -> str | None:
+    bilibili = manifest.get("bilibili")
+    if bilibili is None:
+        return None
+    if not isinstance(bilibili, dict):
+        raise PrepareError("manifest.json bilibili state is invalid")
+    bvid = bilibili.get("bvid")
+    if bvid is None:
+        return None
+    if not isinstance(bvid, str) or not bvid:
+        raise PrepareError("manifest.json BVID is invalid")
+    return bvid
+
+
+def _remove_watermark_analysis(project: WorkflowProject) -> None:
+    path = project.watermark_analysis_dir
+    if path.is_symlink():
+        raise PrepareError(f"watermark analysis path must not be a symlink: {path}")
+    if path.exists() and not path.is_dir():
+        raise PrepareError(f"watermark analysis path must be a directory: {path}")
+    if path.is_dir():
+        shutil.rmtree(path)
+
+
+def _recorded_local_vmaf_results(
+    project: WorkflowProject,
+    manifest: dict[str, Any],
+) -> list[Path]:
+    results = manifest.get("results")
+    raw_files = results.get("files", []) if isinstance(results, dict) else []
+    if not isinstance(raw_files, list):
+        raise PrepareError("manifest.json results files are invalid")
+    paths: list[Path] = []
+    root = project.video_dir.resolve()
+    for raw_path in raw_files:
+        if not isinstance(raw_path, str):
+            raise PrepareError("manifest.json result file path is invalid")
+        candidate = Path(raw_path)
+        resolved = candidate.resolve()
+        if not candidate.is_absolute():
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                resolved = (project.video_dir / candidate.name).resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise PrepareError(
+                f"manifest.json result file is outside project: {raw_path}"
+            ) from exc
+        if not resolved.name.endswith("_vmaf.json"):
+            raise PrepareError(
+                f"manifest.json result file is not a VMAF JSON: {raw_path}"
+            )
+        paths.append(resolved)
+    return paths
+
+
+def _remove_stale_local_vmaf_results(paths: list[Path]) -> None:
+    for path in paths:
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise PrepareError(f"managed VMAF result is not a regular file: {path}")
+        if path.is_file():
+            path.unlink()
+
+
+def _ratio_string(value: Any) -> str | None:
+    if not isinstance(value, str) or value in {"", "N/A", "0:1", "0/1"}:
+        return None
+    normalized = value.replace("/", ":")
+    numerator, separator, denominator = normalized.partition(":")
+    try:
+        numerator_value = int(numerator)
+        denominator_value = int(denominator) if separator else 0
+    except ValueError:
+        return value
+    if numerator_value <= 0 or denominator_value <= 0:
+        return None
+    divisor = math.gcd(numerator_value, denominator_value)
+    return f"{numerator_value // divisor}:{denominator_value // divisor}"
+
+
+def _rotation(stream: dict[str, Any]) -> Any:
+    side_data = stream.get("side_data_list")
+    if isinstance(side_data, list):
+        for item in side_data:
+            if not isinstance(item, dict) or "rotation" not in item:
+                continue
+            try:
+                return int(item["rotation"])
+            except (TypeError, ValueError):
+                return item["rotation"]
+    tags = stream.get("tags")
+    if isinstance(tags, dict) and "rotate" in tags:
+        try:
+            return int(tags["rotate"])
+        except (TypeError, ValueError):
+            return tags["rotate"]
+    return 0
 
 
 def _first_video_stream(data: dict[str, Any]) -> dict[str, Any] | None:

@@ -2,9 +2,10 @@
 
 ## 范围
 
-本阶段只研究水印识别，不接入 `vmaf-workflow`。独立脚本位于
+本研究阶段最初只验证水印识别算法。独立脚本位于
 `devscripts/explore_watermark_detection.py`，所有诊断产物由调用者指定目录，
-建议放在仓库外的临时目录。
+建议放在仓库外的临时目录。算法现已提取到
+`src/vmaf_workflow/watermark_detection.py`，独立脚本和主流水线共用同一实现。
 
 已知样本：
 
@@ -83,16 +84,19 @@ uv run python devscripts/explore_watermark_detection.py `
 - 当前 13 个正样本只包含三个不同视频内容，不能据此确定最终阈值或宣称泛化
   完成。
 
-## 下一阶段：无参考视频
+## 2026-07-19 主流水线集成
 
-用户提供无参考文件列表后，应在独立脚本中新增模板检测模式：
+有参考模式已作为 `prepare` 的内部步骤接入：
 
-1. 从本阶段残差图或经过确认的透明 logo 资产生成只包含 bilibili 图形的模板。
-2. 对无参考视频均匀抽帧，在四周边缘带做灰度梯度上的多尺度模板匹配。
-3. 只接受跨帧位置、尺度一致的匹配；单帧高分不算水印。
-4. 以 logo 为锚点，在同一文字带向左搜索稳定的文字连通区域，得到完整水印框。
-5. 引入 `present`、`absent`、`uncertain` 三态，并为 `uncertain` 保留人工预览。
-6. 使用无水印 B站视频、片内字幕、固定 UI、亮色角标和暗场作为困难负样本，
-   再确定模板分数和一致性阈值。
+- 每个含 BVID 的项目只检测唯一的 B站 1080p H.264 代表文件。
+- `present` 写入项目级归一化 exclusion；`absent` 继续全画面评分；两个及以上
+  候选为 `uncertain`，保留诊断并阻断。
+- 所有媒体先按真实 decoded 分辨率生成审计框；remote-plan 再按 easyVmaf 的
+  HD/4K 强制拉伸生成最终 `drawbox`。
+- package 对 inventory 和 analysis summary 记录 SHA-256，只上传 summary，不上传
+  PNG；status、remote-plan 和远端 provenance 都记录或校验评分范围。
+- 无参考识别、手工 bbox override 和 Viewer UI 展示不属于这次实现。
 
-在无参考样本验证完成前，不应把当前算法接入流水线或自动生成 VMAF 遮罩。
+真实 `videos/video6` 验收仍得到右上角分析框 `(789,16,159,36)`，候选分数
+`540.621499`。加入安全边距后，HD 排除框为 `(1570,24,334,88)`，4K 排除框为
+`(3140,48,668,176)`；项目内全部 8 条比较命令使用相应目标框。

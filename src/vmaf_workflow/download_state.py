@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,18 @@ def invalidate_downstream(project: WorkflowProject, manifest: Manifest) -> None:
             raise DownloadStateError(f"managed downstream path is not a file: {path}")
         if path.is_file():
             path.unlink()
+
+    analysis_dir = project.watermark_analysis_dir
+    if analysis_dir.is_symlink():
+        raise DownloadStateError(
+            f"managed watermark analysis path is a symlink: {analysis_dir}"
+        )
+    if analysis_dir.exists() and not analysis_dir.is_dir():
+        raise DownloadStateError(
+            f"managed watermark analysis path is not a directory: {analysis_dir}"
+        )
+    if analysis_dir.is_dir():
+        shutil.rmtree(analysis_dir)
 
     for key in DOWNSTREAM_MANIFEST_KEYS:
         manifest.pop(key, None)

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from vmaf_workflow.project import WorkflowProject
+from vmaf_workflow.remote_state import sha256_file
 from vmaf_workflow.status import (
     WorkflowStatusError,
     inspect_workflow_status,
@@ -419,6 +420,7 @@ def _write_packaged(project: WorkflowProject) -> None:
             "archive_path": str(project.default_package_path),
             "archive_root": project.video_dir.name,
             "inventory_path": str(project.media_inventory_path),
+            "inventory_sha256": sha256_file(project.media_inventory_path),
             "media_files": [
                 {"path": "reference.mp4", "role": "reference", "size_bytes": 9},
                 {"path": "distorted.mp4", "role": "distorted", "size_bytes": 9},
@@ -435,11 +437,18 @@ def _write_packaged(project: WorkflowProject) -> None:
 
 
 def _write_planned(project: WorkflowProject) -> None:
+    package_manifest = _read_json(project.package_manifest_path)
     _write_json(
         project.remote_plan_path,
         {
+            "schema_version": 2,
+            "watermark_mapping_contract": "normalized-real-easyvmaf-v1",
             "package_archive": project.default_package_path.name,
+            "inventory_sha256": package_manifest["inventory_sha256"],
+            "watermark_analysis_sha256": None,
             "result_archive": project.default_result_archive_path.name,
+            "score_scope": "full_frame",
+            "content_exclusions": [],
             "expected_results": [
                 f"{project.video_dir.name}/distorted_vmaf.json"
             ],
