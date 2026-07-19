@@ -3,9 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import threading
+from types import SimpleNamespace
 
 import pytest
-from textual.widgets import Input, Select, Static
+from textual.widgets import DataTable, Input, Select, Static
 
 from vmaf_workflow.pipeline import (
     PipelineEvent,
@@ -26,6 +27,26 @@ async def test_tui_rejects_empty_new_project_form(tmp_path: Path) -> None:
         await pilot.pause()
 
         assert "至少填写一个" in str(app.query_one("#validation", Static).content)
+
+
+@pytest.mark.asyncio
+async def test_tui_elapsed_column_fits_full_timestamp(tmp_path: Path) -> None:
+    app = WorkflowTui(videos_dir=tmp_path / "videos")
+
+    async with app.run_test(size=(80, 24)):
+        record = StageRecord(
+            STAGES[0],
+            status=StageStatus.SUCCESS,
+            returncode=0,
+            elapsed_seconds=3_661,
+        )
+        app.pipeline = SimpleNamespace(records={STAGES[0]: record})
+        app._update_stage_row(STAGES[0])
+
+        table = app.query_one("#steps", DataTable)
+        elapsed_column = table.ordered_columns[3]
+        assert elapsed_column.width >= len("01:01:01")
+        assert table.get_cell(STAGES[0].value, "elapsed") == "01:01:01"
 
 
 @pytest.mark.asyncio

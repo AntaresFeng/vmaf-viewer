@@ -219,7 +219,7 @@ class WorkflowTui(App[int]):
         table.add_column("步骤", key="name")
         table.add_column("状态", key="status")
         table.add_column("返回码", key="returncode")
-        table.add_column("耗时", key="elapsed")
+        table.add_column("耗时", width=8, key="elapsed")
         for stage in STAGES:
             table.add_row(STAGE_LABELS[stage], "等待", "—", "—", key=stage.value)
         self.query_one("#run-view").display = False
