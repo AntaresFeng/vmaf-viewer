@@ -51,9 +51,11 @@ class SubprocessRunner:
         output_callback: OutputCallback | None = None,
         *,
         mirror_console: bool = True,
+        inherit_stdin: bool = True,
     ) -> None:
         self.output_callback = output_callback
         self.mirror_console = mirror_console
+        self.inherit_stdin = inherit_stdin
         self._cancelled = threading.Event()
         self._process_lock = threading.Lock()
         self._process: subprocess.Popen | None = None
@@ -67,6 +69,11 @@ class SubprocessRunner:
     ) -> CommandResult:
         if self.output_callback is not None:
             return self._run_with_output(argv, stdin, output_encoding)
+        stdin_kwargs = (
+            {"stdin": subprocess.DEVNULL}
+            if stdin is None and not self.inherit_stdin
+            else {}
+        )
         completed = subprocess.run(
             argv,
             input=stdin,
@@ -76,6 +83,7 @@ class SubprocessRunner:
             errors="replace",
             shell=False,
             check=False,
+            **stdin_kwargs,
         )
         return CommandResult(
             tuple(argv),
@@ -109,12 +117,16 @@ class SubprocessRunner:
     ) -> int:
         self._raise_if_cancelled()
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        stdin_kwargs = (
+            {"stdin": subprocess.DEVNULL} if not self.inherit_stdin else {}
+        )
         process = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=False,
             shell=False,
+            **stdin_kwargs,
         )
         mode = "a" if append else "w"
         try:
@@ -170,7 +182,13 @@ class SubprocessRunner:
         self._raise_if_cancelled()
         process = subprocess.Popen(
             argv,
-            stdin=subprocess.PIPE if stdin is not None else None,
+            stdin=(
+                subprocess.PIPE
+                if stdin is not None
+                else None
+                if self.inherit_stdin
+                else subprocess.DEVNULL
+            ),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=False,

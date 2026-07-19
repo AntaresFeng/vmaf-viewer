@@ -274,6 +274,7 @@ class WorkflowPipeline:
         self.runner = runner or SubprocessRunner(
             output_callback=self._on_process_output,
             mirror_console=False,
+            inherit_stdin=False,
         )
         if runner is not None:
             existing_callback = runner.output_callback
@@ -285,6 +286,7 @@ class WorkflowPipeline:
                     self._on_process_output,
                 )
             runner.mirror_console = False
+            runner.inherit_stdin = False
         self.records = {stage: StageRecord(stage) for stage in STAGES}
         self.project = (
             project_from_dir(self.request.project_dir)

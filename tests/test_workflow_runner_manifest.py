@@ -86,14 +86,18 @@ def test_subprocess_runner_can_stream_and_preserve_separate_output(
             return 9
 
     process = FakeProcess()
-    monkeypatch.setattr(
-        "vmaf_workflow.runner.subprocess.Popen",
-        lambda *_args, **_kwargs: process,
-    )
+    calls = []
+
+    def fake_popen(*_args, **kwargs):
+        calls.append(kwargs)
+        return process
+
+    monkeypatch.setattr("vmaf_workflow.runner.subprocess.Popen", fake_popen)
 
     runner = SubprocessRunner(
         lambda stream, text: events.append((stream, text)),
         mirror_console=False,
+        inherit_stdin=False,
     )
     result = runner.run(["tool", "arg"], stdin="选择\n")
 
@@ -106,9 +110,44 @@ def test_subprocess_runner_can_stream_and_preserve_separate_output(
     )
     assert process.stdin.value == "选择\n".encode()
     assert process.stdin.closed is True
+    assert calls[0]["stdin"] == subprocess.PIPE
     assert sorted(events) == sorted(
         [("stdout", "out-1"), ("stdout", "out-2"), ("stderr", "err")]
     )
+
+
+def test_subprocess_runner_detaches_terminal_input_for_callback_commands(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class Pipe:
+        def read1(self, _size):
+            return b""
+
+    class FakeProcess:
+        stdout = Pipe()
+        stderr = Pipe()
+        stdin = None
+
+        def wait(self, timeout=None):
+            assert timeout is None
+            return 0
+
+    def fake_popen(*_args, **kwargs):
+        calls.append(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr("vmaf_workflow.runner.subprocess.Popen", fake_popen)
+
+    result = SubprocessRunner(
+        lambda *_args: None,
+        mirror_console=False,
+        inherit_stdin=False,
+    ).run(["ssh", "3080", "command"])
+
+    assert result.returncode == 0
+    assert calls[0]["stdin"] == subprocess.DEVNULL
 
 
 def test_subprocess_runner_decodes_callback_output_with_selected_encoding(
@@ -458,6 +497,39 @@ def test_subprocess_runner_streams_stdout_and_writes_log(
         )
     ]
     assert FakeProcess.stdout.read1_calls == 3
+
+
+def test_subprocess_runner_detaches_terminal_input_for_streaming_commands(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class EmptyStdout:
+        def read1(self, _size):
+            return b""
+
+    class FakeProcess:
+        stdout = EmptyStdout()
+
+        def wait(self, timeout=None):
+            assert timeout is None
+            return 0
+
+    def fake_popen(_argv, **kwargs):
+        calls.append(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr("vmaf_workflow.runner.subprocess.Popen", fake_popen)
+
+    returncode = SubprocessRunner(
+        lambda *_args: None,
+        mirror_console=False,
+        inherit_stdin=False,
+    ).stream(["scp", "input", "3080:output"], tmp_path / "upload.log")
+
+    assert returncode == 0
+    assert calls[0]["stdin"] == subprocess.DEVNULL
 
 
 def test_subprocess_runner_terminates_streaming_process_on_interrupt(

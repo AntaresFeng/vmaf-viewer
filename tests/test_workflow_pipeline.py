@@ -320,7 +320,7 @@ def test_pipeline_download_command_uses_only_incomplete_source(
     assert "--bvid" not in command
 
 
-def test_pipeline_chains_injected_runner_callback_and_disables_mirroring(
+def test_pipeline_chains_runner_callback_and_detaches_terminal_io(
     tmp_path: Path,
 ) -> None:
     reference = tmp_path / "reference.mp4"
@@ -338,6 +338,7 @@ def test_pipeline_chains_injected_runner_callback_and_disables_mirroring(
     )
 
     assert runner.mirror_console is False
+    assert runner.inherit_stdin is False
     assert runner.output_callback is not None
     runner.output_callback("stdout", "hello")
 
