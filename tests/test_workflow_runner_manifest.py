@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
+import vmaf_workflow.runner as runner_module
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.models import CommandResult
-from vmaf_workflow.runner import SubprocessRunner
-from vmaf_workflow.runner import ProcessInterrupted
+from vmaf_workflow.runner import ProcessInterrupted, SubprocessRunner
 
 
 def test_subprocess_runner_uses_safe_capture_options(monkeypatch) -> None:
@@ -109,6 +109,53 @@ def test_subprocess_runner_can_stream_and_preserve_separate_output(
     assert sorted(events) == sorted(
         [("stdout", "out-1"), ("stdout", "out-2"), ("stderr", "err")]
     )
+
+
+def test_subprocess_runner_decodes_callback_output_with_selected_encoding(
+    monkeypatch,
+) -> None:
+    expected = "遇到问题，1080P 高码率\n"
+    encoded = expected.encode("cp936")
+    events = []
+
+    class Pipe:
+        def __init__(self, chunks):
+            self.chunks = list(chunks)
+
+        def read1(self, _size):
+            return self.chunks.pop(0)
+
+    class FakeProcess:
+        stdout = Pipe([encoded[:1], encoded[1:7], encoded[7:], b""])
+        stderr = Pipe([b""])
+        stdin = None
+
+        def wait(self, timeout=None):
+            assert timeout is None
+            return 0
+
+    monkeypatch.setattr(
+        "vmaf_workflow.runner.subprocess.Popen",
+        lambda *_args, **_kwargs: FakeProcess(),
+    )
+
+    result = SubprocessRunner(
+        lambda stream, text: events.append((stream, text)),
+        mirror_console=False,
+    ).run(["BBDown.exe", "-info"], output_encoding="cp936")
+
+    assert result.stdout == expected
+    assert "".join(text for stream, text in events if stream == "stdout") == expected
+
+
+def test_console_output_encoding_uses_available_windows_code_page(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runner_module,
+        "_windows_console_output_code_page",
+        lambda: 936,
+    )
+
+    assert runner_module.console_output_encoding() == "cp936"
 
 
 def test_subprocess_runner_external_cancel_interrupts_active_process() -> None:

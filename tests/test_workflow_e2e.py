@@ -158,7 +158,7 @@ def test_workflow_runs_from_download_through_cleanup_and_viewer_scan(
 
 
 class EndToEndRunner:
-    def run(self, argv, stdin=None) -> CommandResult:
+    def run(self, argv, stdin=None, *, output_encoding="utf-8") -> CommandResult:
         arguments = [str(value) for value in argv]
         if "-info" in arguments:
             return CommandResult(

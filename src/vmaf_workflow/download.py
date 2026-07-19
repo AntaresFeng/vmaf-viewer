@@ -32,6 +32,7 @@ from vmaf_workflow.project import (
     write_text,
     ytdlp_config_text,
 )
+from vmaf_workflow.runner import console_output_encoding
 from vmaf_workflow.ytdlp import (
     load_after_video_downloads,
     load_sidecar_downloads,
@@ -237,8 +238,10 @@ def _run_bilibili_downloads(
     runner,
     manifest: Manifest,
 ) -> int:
+    output_encoding = console_output_encoding()
     info_result = runner.run(
-        bbdown_info_argv(settings.bbdown.exe_path, bvid, project.bbdown_config_path)
+        bbdown_info_argv(settings.bbdown.exe_path, bvid, project.bbdown_config_path),
+        output_encoding=output_encoding,
     )
     _append_command(manifest, info_result)
     if info_result.returncode != 0:
@@ -259,7 +262,8 @@ def _run_bilibili_downloads(
     fresh_streams = []
     if plan:
         fresh_result = runner.run(
-            bbdown_info_argv(settings.bbdown.exe_path, bvid, project.bbdown_config_path)
+            bbdown_info_argv(settings.bbdown.exe_path, bvid, project.bbdown_config_path),
+            output_encoding=output_encoding,
         )
         _append_command(manifest, fresh_result)
         if fresh_result.returncode != 0:
@@ -296,6 +300,7 @@ def _run_bilibili_downloads(
                 project.bbdown_config_path,
             ),
             stdin=f"{selected_index}\n",
+            output_encoding=output_encoding,
         )
         _append_command(manifest, download_result)
         manifest["bilibili"]["downloads"].append(

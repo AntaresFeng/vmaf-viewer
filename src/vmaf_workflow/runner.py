@@ -21,6 +21,30 @@ class ProcessInterrupted(KeyboardInterrupt):
     """Raised after a caller cancels the currently running subprocess."""
 
 
+def console_output_encoding() -> str:
+    """Return the active Windows console output encoding, or UTF-8 elsewhere."""
+    code_page = _windows_console_output_code_page()
+    if code_page <= 0:
+        return "utf-8"
+    encoding = f"cp{code_page}"
+    try:
+        codecs.lookup(encoding)
+    except LookupError:
+        return "utf-8"
+    return encoding
+
+
+def _windows_console_output_code_page() -> int:
+    if sys.platform != "win32":
+        return 0
+    try:
+        import ctypes
+
+        return int(ctypes.windll.kernel32.GetConsoleOutputCP())
+    except (AttributeError, OSError):
+        return 0
+
+
 class SubprocessRunner:
     def __init__(
         self,
@@ -34,15 +58,21 @@ class SubprocessRunner:
         self._process_lock = threading.Lock()
         self._process: subprocess.Popen | None = None
 
-    def run(self, argv: list[str], stdin: str | None = None) -> CommandResult:
+    def run(
+        self,
+        argv: list[str],
+        stdin: str | None = None,
+        *,
+        output_encoding: str = "utf-8",
+    ) -> CommandResult:
         if self.output_callback is not None:
-            return self._run_with_output(argv, stdin)
+            return self._run_with_output(argv, stdin, output_encoding)
         completed = subprocess.run(
             argv,
             input=stdin,
             text=True,
             capture_output=True,
-            encoding="utf-8",
+            encoding=output_encoding,
             errors="replace",
             shell=False,
             check=False,
@@ -135,6 +165,7 @@ class SubprocessRunner:
         self,
         argv: list[str],
         stdin: str | None,
+        output_encoding: str,
     ) -> CommandResult:
         self._raise_if_cancelled()
         process = subprocess.Popen(
@@ -153,7 +184,9 @@ class SubprocessRunner:
         emit_enabled.set()
 
         def read_stream(name: str, pipe, chunks: list[str]) -> None:
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            decoder = codecs.getincrementaldecoder(output_encoding)(
+                errors="replace"
+            )
             read_available = getattr(pipe, "read1", None) or pipe.read
             try:
                 while capture_enabled.is_set():

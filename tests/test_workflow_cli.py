@@ -1202,9 +1202,11 @@ def test_download_invalid_bvid_fails_without_creating_project(
 class FakeRunner:
     def __init__(self) -> None:
         self.calls = []
+        self.encoding_calls = []
 
-    def run(self, argv, stdin=None):
+    def run(self, argv, stdin=None, *, output_encoding="utf-8"):
         self.calls.append((list(argv), stdin))
+        self.encoding_calls.append((list(argv), output_encoding))
         joined = " ".join(argv)
         if "-info" in argv:
             return CommandResult(
@@ -1236,7 +1238,13 @@ class FailIfCalledRunner:
         raise AssertionError(f"runner must not be called: {argv}")
 
 
-def test_download_uses_runner_for_bilibili_and_youtube(tmp_path: Path) -> None:
+def test_download_uses_runner_for_bilibili_and_youtube(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "vmaf_workflow.download.console_output_encoding",
+        lambda: "cp936",
+    )
     runner = FakeRunner()
 
     result = main(
@@ -1256,6 +1264,16 @@ def test_download_uses_runner_for_bilibili_and_youtube(tmp_path: Path) -> None:
     assert any("-info" in argv for argv, _stdin in runner.calls)
     assert any(stdin == "0\n" for _argv, stdin in runner.calls)
     assert any("yt-dlp.exe" in " ".join(argv) for argv, _stdin in runner.calls)
+    assert {
+        encoding
+        for argv, encoding in runner.encoding_calls
+        if "BBDown.exe" in argv[0]
+    } == {"cp936"}
+    assert {
+        encoding
+        for argv, encoding in runner.encoding_calls
+        if "yt-dlp.exe" in argv[0]
+    } == {"utf-8"}
 
     manifest = json.loads(
         (tmp_path / "video0" / ".workflow" / "manifest.json").read_text(
@@ -1628,7 +1646,7 @@ class MultiBilibiliRunner:
     def __init__(self) -> None:
         self.calls = []
 
-    def run(self, argv, stdin=None):
+    def run(self, argv, stdin=None, *, output_encoding="utf-8"):
         self.calls.append((list(argv), stdin))
         if "-info" in argv:
             return CommandResult(
