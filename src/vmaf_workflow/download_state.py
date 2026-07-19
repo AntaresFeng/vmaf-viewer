@@ -68,7 +68,9 @@ def merge_download_manifest(
     ):
         merged[key] = deepcopy(current[key])
 
-    merged["created_at"] = deepcopy(existing.get("created_at", current["created_at"]))
+    merged["created_at"] = deepcopy(
+        existing.get("created_at", current["created_at"])
+    )
     merged["updated_at"] = deepcopy(current["created_at"])
 
     for source, should_update in (

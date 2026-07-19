@@ -627,7 +627,9 @@ def test_upload_maps_remote_command_failure_to_exit_code_1(
 ) -> None:
     monkeypatch.setattr(
         "vmaf_workflow.cli.upload_project",
-        lambda *_args: (_ for _ in ()).throw(RemoteCommandError("preflight failed")),
+        lambda *_args: (_ for _ in ()).throw(
+            RemoteCommandError("preflight failed")
+        ),
     )
 
     result = main(
@@ -841,7 +843,10 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert remote_plan["easyvmaf_repo"] == "/opt/easy Vmaf"
     assert remote_plan["package_archive"] == "video0-inputs.tar"
     assert remote_plan["result_archive"] == "video0-json.tar.gz"
-    assert remote_plan["result_provenance"] == "vmaf-workflow-provenance.json"
+    assert (
+        remote_plan["result_provenance"]
+        == "vmaf-workflow-provenance.json"
+    )
     assert remote_plan["environment_preflight_argument"] == "--environment-only"
     assert remote_plan["preflight_argument"] == "--preflight-only"
     assert remote_plan["requirements"] == {
@@ -891,10 +896,13 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert "EASYVMAF_REPO='/opt/easy Vmaf'" in script
     assert "EASYVMAF_EXECUTABLE='/opt/easy Vmaf/.venv/bin/easyvmaf'" in script
     assert "EASYVMAF_REQUIRED_BRANCH=master" in script
-    assert "MODE=${1:-run}" in script
-    assert "usage: $0 [--environment-only|--preflight-only]" in script
+    assert 'MODE=${1:-run}' in script
+    assert 'usage: $0 [--environment-only|--preflight-only]' in script
     assert '"$EASYVMAF_EXECUTABLE" --help' in script
-    assert 'git -C "$EASYVMAF_REPO" symbolic-ref --quiet --short HEAD' in script
+    assert (
+        'git -C "$EASYVMAF_REPO" symbolic-ref --quiet --short HEAD'
+        in script
+    )
     assert "easyVmaf repository is in detached HEAD state" in script
     assert "easyVmaf branch mismatch: expected" in script
     assert 'info "easyVmaf branch: $easyvmaf_branch"' in script
@@ -922,7 +930,7 @@ def test_remote_plan_generates_json_script_and_manifest_pointer(
     assert "[[ -s 'video0/普通 1080_vmaf.json' ]]" in script
     assert "video0/*.json" not in script
     assert (
-        "tar -czf \"$RESULT_ARCHIVE\" -- 'video0/普通 1080_vmaf.json' "
+        'tar -czf "$RESULT_ARCHIVE" -- \'video0/普通 1080_vmaf.json\' '
         "video0/clip-1600_vmaf.json video0/clip-2160p_vmaf.json"
     ) in script
     assert 'tar -tzf "$RESULT_ARCHIVE"' in script
@@ -1159,18 +1167,15 @@ def test_interactive_and_auto_use_same_entrypoint(
     monkeypatch.setattr("vmaf_workflow.tui.run_interactive", fake_interactive)
     project_dir = tmp_path / "video3"
 
-    assert (
-        main(
-            [
-                command,
-                "--videos-dir",
-                str(tmp_path),
-                "--project-dir",
-                str(project_dir),
-            ]
-        )
-        == 17
-    )
+    assert main(
+        [
+            command,
+            "--videos-dir",
+            str(tmp_path),
+            "--project-dir",
+            str(project_dir),
+        ]
+    ) == 17
     assert calls == [(tmp_path, project_dir)]
 
 
@@ -1260,10 +1265,14 @@ def test_download_uses_runner_for_bilibili_and_youtube(
     assert any(stdin == "0\n" for _argv, stdin in runner.calls)
     assert any("yt-dlp.exe" in " ".join(argv) for argv, _stdin in runner.calls)
     assert {
-        encoding for argv, encoding in runner.encoding_calls if "BBDown.exe" in argv[0]
+        encoding
+        for argv, encoding in runner.encoding_calls
+        if "BBDown.exe" in argv[0]
     } == {"cp936"}
     assert {
-        encoding for argv, encoding in runner.encoding_calls if "yt-dlp.exe" in argv[0]
+        encoding
+        for argv, encoding in runner.encoding_calls
+        if "yt-dlp.exe" in argv[0]
     } == {"utf-8"}
 
     manifest = json.loads(
@@ -1312,11 +1321,12 @@ def test_incremental_download_preserves_other_source_and_command_history(
     assert first_result == 0
     assert second_result == 0
     assert merged["bilibili"] == first_manifest["bilibili"]
-    assert merged["youtube"]["url"] == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    assert merged["youtube"]["url"] == (
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    )
     assert merged["youtube"]["downloads"]
-    assert (
-        merged["commands"][: len(first_manifest["commands"])]
-        == (first_manifest["commands"])
+    assert merged["commands"][: len(first_manifest["commands"])] == (
+        first_manifest["commands"]
     )
     assert len(merged["commands"]) > len(first_manifest["commands"])
     assert merged["created_at"] == first_manifest["created_at"]
@@ -1338,21 +1348,18 @@ def test_incremental_download_rejects_conflicting_source_atomically(
     message: str,
 ) -> None:
     project_dir = tmp_path / "video0"
-    assert (
-        main(
-            [
-                "download",
-                "--project-dir",
-                str(project_dir),
-                "--bvid",
-                "BV1xx411c7mD",
-                "--ytid",
-                "dQw4w9WgXcQ",
-                "--dry-run",
-            ]
-        )
-        == 0
-    )
+    assert main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--bvid",
+            "BV1xx411c7mD",
+            "--ytid",
+            "dQw4w9WgXcQ",
+            "--dry-run",
+        ]
+    ) == 0
     before = _project_file_bytes(project_dir)
 
     result = main(
@@ -1370,13 +1377,10 @@ def test_incremental_download_invalidates_managed_downstream_state(
     tmp_path: Path,
 ) -> None:
     runner = FakeRunner()
-    assert (
-        main(
-            ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
-            runner=runner,
-        )
-        == 0
-    )
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
     project_dir = tmp_path / "video0"
     workflow_dir = project_dir / ".workflow"
     managed = [
@@ -1440,13 +1444,10 @@ def test_failed_incremental_download_keeps_downstream_invalid(
     tmp_path: Path,
 ) -> None:
     runner = FakeRunner()
-    assert (
-        main(
-            ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
-            runner=runner,
-        )
-        == 0
-    )
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
     project_dir = tmp_path / "video0"
     workflow_dir = project_dir / ".workflow"
     inventory = workflow_dir / "media-inventory.json"
@@ -1474,33 +1475,29 @@ def test_incremental_download_same_source_replaces_latest_snapshot(
     tmp_path: Path,
 ) -> None:
     runner = FakeRunner()
-    assert (
-        main(
-            ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
-            runner=runner,
-        )
-        == 0
-    )
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
     project_dir = tmp_path / "video0"
     manifest_path = project_dir / ".workflow" / "manifest.json"
     first = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    assert (
-        main(
-            [
-                "download",
-                "--project-dir",
-                str(project_dir),
-                "--bvid",
-                "BV1xx411c7mD",
-            ],
-            runner=runner,
-        )
-        == 0
-    )
+    assert main(
+        [
+            "download",
+            "--project-dir",
+            str(project_dir),
+            "--bvid",
+            "BV1xx411c7mD",
+        ],
+        runner=runner,
+    ) == 0
     second = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    assert len(second["bilibili"]["downloads"]) == len(first["bilibili"]["downloads"])
+    assert len(second["bilibili"]["downloads"]) == len(
+        first["bilibili"]["downloads"]
+    )
     assert len(second["commands"]) == 2 * len(first["commands"])
     assert second["created_at"] == first["created_at"]
     assert "updated_at" in second
@@ -1508,13 +1505,10 @@ def test_incremental_download_same_source_replaces_latest_snapshot(
 
 def test_existing_manifest_dry_run_is_read_only(tmp_path: Path) -> None:
     runner = FakeRunner()
-    assert (
-        main(
-            ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
-            runner=runner,
-        )
-        == 0
-    )
+    assert main(
+        ["download", "--videos-dir", str(tmp_path), "--bvid", "BV1xx411c7mD"],
+        runner=runner,
+    ) == 0
     project_dir = tmp_path / "video0"
     workflow_dir = project_dir / ".workflow"
     (workflow_dir / "media-inventory.json").write_text("{}", encoding="utf-8")

@@ -25,7 +25,9 @@ class WorkflowStatus:
 
 def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
     if not project.video_dir.is_dir():
-        raise WorkflowStatusError(f"project directory is required: {project.video_dir}")
+        raise WorkflowStatusError(
+            f"project directory is required: {project.video_dir}"
+        )
 
     manifest = load_optional_json_object(project.manifest_path, "manifest.json")
     inventory = load_optional_json_object(
@@ -83,7 +85,8 @@ def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
     if package_archive is None:
         package_archive = project.default_package_path
     package_absence_expected = (
-        cleanup_status in {"pending", "completed"} and not package_archive.exists()
+        cleanup_status in {"pending", "completed"}
+        and not package_archive.exists()
     )
     if not package_archive.is_file() and not package_absence_expected:
         package_missing.append(str(package_archive))

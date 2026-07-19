@@ -272,9 +272,7 @@ def test_subprocess_runner_preserves_exit_code_after_broken_stdin_pipe(
     assert FakeProcess.stdin.closed is True
 
 
-def test_subprocess_runner_cancels_process_registered_after_request(
-    monkeypatch,
-) -> None:
+def test_subprocess_runner_cancels_process_registered_after_request(monkeypatch) -> None:
     popen_started = threading.Event()
     allow_popen_return = threading.Event()
     terminated = threading.Event()

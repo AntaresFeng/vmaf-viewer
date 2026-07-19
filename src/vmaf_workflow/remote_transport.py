@@ -80,7 +80,9 @@ class RemoteTransport:
         if result.returncode == 44:
             return None
         if result.returncode != 0:
-            raise RemoteTransportError(f"failed to read remote SHA-256: {remote_path}")
+            raise RemoteTransportError(
+                f"failed to read remote SHA-256: {remote_path}"
+            )
         match = re.match(r"^([0-9a-fA-F]{64})(?:\s|$)", result.stdout.strip())
         if match is None:
             raise RemoteTransportError(
@@ -112,7 +114,9 @@ class RemoteTransport:
 
             temp_sha256 = self.remote_sha256(temp_path, log_path)
             if temp_sha256 != expected_sha256:
-                raise RemoteTransportError(f"uploaded SHA-256 mismatch: {remote_path}")
+                raise RemoteTransportError(
+                    f"uploaded SHA-256 mismatch: {remote_path}"
+                )
 
             result = self.run_remote(
                 f"mv -f -- {_quote(temp_path.as_posix())} "
@@ -138,8 +142,9 @@ class RemoteTransport:
         argv = ["bash", script_path.name]
         if argument is not None:
             argv.append(argument)
-        remote_command = f"cd {_quote(script_path.parent.as_posix())} && " + " ".join(
-            _quote(value) for value in argv
+        remote_command = (
+            f"cd {_quote(script_path.parent.as_posix())} && "
+            + " ".join(_quote(value) for value in argv)
         )
         return self._stream(
             self.ssh_argv(remote_command),
@@ -168,7 +173,9 @@ class RemoteTransport:
                 append=True,
             )
             if returncode != 0:
-                raise RemoteTransportError(f"failed to download: {remote_path}")
+                raise RemoteTransportError(
+                    f"failed to download: {remote_path}"
+                )
         except BaseException:
             _remove_local_file(local_path)
             raise
@@ -178,7 +185,9 @@ class RemoteTransport:
         try:
             result = self.runner.run(argv)
         except OSError as exc:
-            raise RemoteTransportError(f"failed to start {argv[0]}: {exc}") from exc
+            raise RemoteTransportError(
+                f"failed to start {argv[0]}: {exc}"
+            ) from exc
         _append_result(log_path, result)
         return result
 
@@ -195,7 +204,9 @@ class RemoteTransport:
                 append=append,
             )
         except OSError as exc:
-            raise RemoteTransportError(f"failed to start {argv[0]}: {exc}") from exc
+            raise RemoteTransportError(
+                f"failed to start {argv[0]}: {exc}"
+            ) from exc
 
     def _remove_remote_file(
         self,
@@ -217,7 +228,10 @@ class RemoteTransport:
             "-o",
             f"ConnectTimeout={self.settings.connect_timeout_seconds}",
             "-o",
-            (f"ServerAliveInterval={self.settings.server_alive_interval_seconds}"),
+            (
+                "ServerAliveInterval="
+                f"{self.settings.server_alive_interval_seconds}"
+            ),
         ]
 
 

@@ -190,15 +190,11 @@ def _validate_pipeline_request_context(
 
     needs_reference = project_dir is None
     if project_dir is not None:
-        if (
-            manifest is None
-            or any(requested_incomplete_sources(manifest))
-            or (
-                _has_requested_unbound_source(
-                    manifest,
-                    normalized_bvid,
-                    normalized_youtube,
-                )
+        if manifest is None or any(requested_incomplete_sources(manifest)) or (
+            _has_requested_unbound_source(
+                manifest,
+                normalized_bvid,
+                normalized_youtube,
             )
         ):
             needs_reference = True
@@ -212,10 +208,8 @@ def _validate_pipeline_request_context(
                 StageName.PREPARE,
             }
 
-    if (
-        needs_reference
-        and reference is None
-        and (resume_defaults is None or resume_defaults.reference is None)
+    if needs_reference and reference is None and (
+        resume_defaults is None or resume_defaults.reference is None
     ):
         raise PipelineValidationError("必须提供参考视频路径")
 
@@ -343,9 +337,7 @@ class WorkflowPipeline:
                 return returncode
 
         self._failed_stage = None
-        self._emit(
-            PipelineEvent("pipeline-completed", project_dir=self._project_path())
-        )
+        self._emit(PipelineEvent("pipeline-completed", project_dir=self._project_path()))
         return 0
 
     def _run_stage(self, stage: StageName) -> int:
@@ -395,9 +387,7 @@ class WorkflowPipeline:
             self._manifest_cache = outcome.manifest
             self._manifest_loaded = True
             self._resume_defaults_cache = None
-            self._emit(
-                PipelineEvent("project-selected", project_dir=self.project.video_dir)
-            )
+            self._emit(PipelineEvent("project-selected", project_dir=self.project.video_dir))
             if outcome.returncode != 0:
                 raise StageFailed("下载阶段失败，请检查下载器输出", outcome.returncode)
             return ()
@@ -511,9 +501,7 @@ class WorkflowPipeline:
             self.records[stage] = StageRecord(stage, status=StageStatus.SUCCESS)
         if not self.request.cleanup:
             self.records[StageName.CLEANUP].status = StageStatus.SKIPPED
-        self._emit(
-            PipelineEvent("records-initialized", project_dir=self._project_path())
-        )
+        self._emit(PipelineEvent("records-initialized", project_dir=self._project_path()))
 
     def _reset_from(self, start_stage: StageName) -> None:
         for stage in STAGES[STAGES.index(start_stage) :]:

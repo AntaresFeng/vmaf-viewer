@@ -117,7 +117,9 @@ class SubprocessRunner:
     ) -> int:
         self._raise_if_cancelled()
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        stdin_kwargs = {"stdin": subprocess.DEVNULL} if not self.inherit_stdin else {}
+        stdin_kwargs = (
+            {"stdin": subprocess.DEVNULL} if not self.inherit_stdin else {}
+        )
         process = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE,
@@ -134,13 +136,19 @@ class SubprocessRunner:
             read_available = getattr(process.stdout, "read1", None)
             if read_available is None:
                 read_available = process.stdout.read
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            decoder = codecs.getincrementaldecoder("utf-8")(
+                errors="replace"
+            )
             with log_path.open(mode, encoding="utf-8", newline="") as log_file:
                 while True:
                     chunk = read_available(4096)
                     if not chunk:
                         break
-                    text = chunk if isinstance(chunk, str) else decoder.decode(chunk)
+                    text = (
+                        chunk
+                        if isinstance(chunk, str)
+                        else decoder.decode(chunk)
+                    )
                     if text:
                         self._emit("stdout", text)
                         log_file.write(text)
@@ -194,7 +202,9 @@ class SubprocessRunner:
         emit_enabled.set()
 
         def read_stream(name: str, pipe, chunks: list[str]) -> None:
-            decoder = codecs.getincrementaldecoder(output_encoding)(errors="replace")
+            decoder = codecs.getincrementaldecoder(output_encoding)(
+                errors="replace"
+            )
             read_available = getattr(pipe, "read1", None) or pipe.read
             try:
                 while capture_enabled.is_set():
