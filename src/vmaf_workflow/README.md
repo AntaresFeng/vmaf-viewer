@@ -144,9 +144,12 @@ uv run vmaf-workflow prepare \
 如果参考视频不在 `videoN` 内，命令会复制一份到项目目录；如果已经在目录内，则只登记。支持扫描 `.mp4`、`.webm`、`.mkv`、`.mov`，并排除 `.workflow` 和 `.yt-dlp-temp`。
 
 如果 manifest 含有 BVID，`prepare` 会在写 inventory 前自动执行一次参考辅助水印
-识别。它只接受唯一的 `<BVID>-*` 1080p H.264 distorted 文件作为代表；同一项目
-中的其他 B站、YouTube 和 reference 必须是方形像素、无旋转，并具有相同 decoded
-宽高比。识别结果为：
+识别。它只接受唯一的、BBDown 文件名中平台画质标签为 `1080P 高帧率`、
+`1080P 高码率` 或 `1080P 高清` 的 H.264 distorted 文件作为代表；平台标注
+1080P 的电影画面可能因上下裁切而具有 1012 等实际 decoded 高度，因此不要求
+高度恰好为 1080。同一项目中的其他 B站、YouTube 和 reference 必须是方形像素、
+无旋转；为容纳不同平台编码尺寸取整，decoded 宽高比允许最多 0.2% 的相对差异。
+识别结果为：
 
 - `present`：写入一个归一化 `bilibili_watermark` exclusion；所有后续比较都排除
   同一区域。

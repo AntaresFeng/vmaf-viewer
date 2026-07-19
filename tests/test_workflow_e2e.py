@@ -212,7 +212,9 @@ class EndToEndRunner:
             config_path = Path(arguments[arguments.index("--config-file") + 1])
             lines = config_path.read_text(encoding="utf-8").splitlines()
             work_dir = Path(lines[lines.index("--work-dir") + 1])
-            (work_dir / "BV1xx411c7mD-1080P-AVC.mp4").write_bytes(b"bilibili-media")
+            (work_dir / "BV1xx411c7mD-1080P 高码率-AVC.mp4").write_bytes(
+                b"bilibili-media"
+            )
         if "--config-locations" in arguments:
             config_path = Path(arguments[arguments.index("--config-locations") + 1])
             self._write_youtube_outputs(config_path)

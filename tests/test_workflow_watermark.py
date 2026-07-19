@@ -29,6 +29,7 @@ from vmaf_workflow.watermark_detection import (
 
 
 BVID = "BV1jm756EEzH"
+REPRESENTATIVE_NAME = f"{BVID}-1080P 高帧率-AVC.mp4"
 NORMALIZED_EDGES = {
     "left": 0.8,
     "top": 0.02,
@@ -49,25 +50,25 @@ def _entry(path: str, width: int, height: int, codec: str) -> dict:
 
 def test_selects_unique_bilibili_1080p_avc_representative() -> None:
     files = [
-        _entry(f"{BVID}-1080P-AVC.mp4", 1920, 1080, "h264"),
+        _entry(REPRESENTATIVE_NAME, 1920, 1012, "h264"),
         _entry(f"{BVID}-4K-AV1.mp4", 3840, 2160, "av1"),
         _entry("youtube-1080.mp4", 1920, 1080, "h264"),
     ]
 
     selected = select_bilibili_representative(files, BVID)
 
-    assert selected["path"] == f"{BVID}-1080P-AVC.mp4"
+    assert selected["path"] == REPRESENTATIVE_NAME
 
 
 @pytest.mark.parametrize(
     "files",
     [
         [_entry(f"{BVID}-4K-AVC.mp4", 3840, 2160, "h264")],
-        [_entry(f"{BVID}-1080P-AV1.mp4", 1920, 1080, "av1")],
+        [_entry(f"{BVID}-1080P 高帧率-AV1.mp4", 1920, 1012, "av1")],
         [_entry("other-1080P-AVC.mp4", 1920, 1080, "h264")],
         [
-            _entry(f"{BVID}-1080P-AVC.mp4", 1920, 1080, "h264"),
-            _entry(f"{BVID}-second-1080P-AVC.mp4", 1920, 1080, "h264"),
+            _entry(REPRESENTATIVE_NAME, 1920, 1012, "h264"),
+            _entry(f"{BVID}-1080P 高码率-AVC.mp4", 1920, 1012, "h264"),
         ],
     ],
 )
@@ -181,7 +182,7 @@ def test_prepare_present_writes_exclusion_summary_and_audit_mappings(
 
     inventory = prepare_project(project, project.video_dir / "reference.mp4")
 
-    assert calls == [project.video_dir / f"{BVID}-1080P-AVC.mp4"]
+    assert calls == [project.video_dir / REPRESENTATIVE_NAME]
     assert inventory["watermark_detection"]["state"] == "present"
     assert inventory["content_exclusions"] == [
         {
@@ -190,7 +191,7 @@ def test_prepare_present_writes_exclusion_summary_and_audit_mappings(
         }
     ]
     summary = _read_json(project.watermark_summary_path)
-    assert summary["workflow"]["representative_path"] == (f"{BVID}-1080P-AVC.mp4")
+    assert summary["workflow"]["representative_path"] == REPRESENTATIVE_NAME
     mappings = {item["path"]: item for item in summary["workflow"]["media_mappings"]}
     assert mappings["youtube-1440.mp4"]["real_pixel_edges"]["right"] == 2432
     assert mappings["reference.mp4"]["width"] == 3840
@@ -234,6 +235,40 @@ def test_prepare_absent_continues_without_exclusion(
     assert inventory["watermark_detection"]["state"] == "absent"
     assert inventory["content_exclusions"] == []
     assert project.watermark_summary_path.is_file()
+
+
+def test_prepare_accepts_small_decoded_aspect_ratio_rounding_differences(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = _base_project(tmp_path)
+
+    def probe(media_path: Path) -> dict:
+        metadata = _fake_probe(media_path)
+        dimensions = {
+            REPRESENTATIVE_NAME: (1920, 1012),
+            f"{BVID}-4K-AV1.mp4": (4096, 2160),
+            "youtube-1440.mp4": (3840, 2026),
+            "reference.mp4": (4096, 2160),
+        }
+        width, height = dimensions[media_path.name]
+        metadata.update(
+            width=width,
+            height=height,
+            resolution=f"{width}x{height}",
+        )
+        return metadata
+
+    monkeypatch.setattr("vmaf_workflow.prepare._probe_media", probe)
+    monkeypatch.setattr(
+        "vmaf_workflow.prepare.detect_watermark",
+        lambda _distorted, _reference, output: _result("absent", output),
+    )
+
+    inventory = prepare_project(project, project.video_dir / "reference.mp4")
+
+    assert inventory["watermark_detection"]["representative"]["height"] == 1012
+    assert inventory["watermark_detection"]["state"] == "absent"
 
 
 def test_prepare_uncertain_keeps_diagnostics_and_does_not_write_inventory(
@@ -420,7 +455,7 @@ def _base_project(tmp_path: Path, *, with_bvid: bool = True) -> WorkflowProject:
     workflow_dir.mkdir(parents=True)
     for name in (
         "reference.mp4",
-        f"{BVID}-1080P-AVC.mp4",
+        REPRESENTATIVE_NAME,
         f"{BVID}-4K-AV1.mp4",
         "youtube-1440.mp4",
     ):
@@ -435,7 +470,7 @@ def _base_project(tmp_path: Path, *, with_bvid: bool = True) -> WorkflowProject:
 def _fake_probe(path: Path) -> dict:
     sizes = {
         "reference.mp4": (3840, 2160, "h264"),
-        f"{BVID}-1080P-AVC.mp4": (1920, 1080, "h264"),
+        REPRESENTATIVE_NAME: (1920, 1080, "h264"),
         f"{BVID}-4K-AV1.mp4": (3840, 2160, "av1"),
         "youtube-1440.mp4": (2560, 1440, "vp9"),
     }

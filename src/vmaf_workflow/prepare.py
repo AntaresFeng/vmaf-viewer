@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from vmaf_workflow.config import FALLBACK_1080_LABEL, HIGH_1080_LABELS
 from vmaf_workflow.download_state import DownloadStateError, invalidate_downstream
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.project import WorkflowProject
@@ -24,6 +25,7 @@ from vmaf_workflow.watermark_detection import (
 
 MEDIA_SUFFIXES = {".mkv", ".mov", ".mp4", ".webm"}
 EXCLUDED_DIR_NAMES = {".workflow", ".yt-dlp-temp"}
+MAX_WATERMARK_ASPECT_RATIO_RELATIVE_ERROR = 0.002
 
 
 class PrepareError(ValueError):
@@ -313,19 +315,19 @@ def _prepare_watermark_detection(
 def select_bilibili_representative(
     files: list[dict[str, Any]], bvid: str
 ) -> dict[str, Any]:
-    prefix = f"{bvid}-"
+    quality_labels = (*HIGH_1080_LABELS, FALLBACK_1080_LABEL)
+    filename_prefixes = tuple(f"{bvid}-{label}-" for label in quality_labels)
     candidates = [
         entry
         for entry in files
         if entry.get("role") == "distorted"
-        and Path(str(entry.get("path", ""))).name.startswith(prefix)
-        and entry.get("height") == 1080
+        and Path(str(entry.get("path", ""))).name.startswith(filename_prefixes)
         and entry.get("codec") == "h264"
     ]
     if len(candidates) != 1:
         raise PrepareError(
             "Bilibili watermark detection requires exactly one distorted "
-            f"1080p AVC file whose basename starts with {prefix!r}; "
+            f"platform-labeled 1080P AVC file for {bvid!r}; "
             f"found {len(candidates)}"
         )
     return candidates[0]
@@ -358,9 +360,17 @@ def _validate_watermark_geometry(
                 f"watermark geometry does not support rotation: {path} has "
                 f"rotation {rotation}"
             )
-        if width * representative_height != height * representative_width:
+        aspect_ratio = width / height
+        representative_aspect_ratio = representative_width / representative_height
+        if not math.isclose(
+            aspect_ratio,
+            representative_aspect_ratio,
+            rel_tol=MAX_WATERMARK_ASPECT_RATIO_RELATIVE_ERROR,
+            abs_tol=0.0,
+        ):
             raise PrepareError(
-                "watermark geometry requires the same decoded aspect ratio: "
+                "watermark geometry requires decoded aspect ratios within "
+                f"{MAX_WATERMARK_ASPECT_RATIO_RELATIVE_ERROR:.1%}: "
                 f"{path} is {width}x{height}, representative is "
                 f"{representative_width}x{representative_height}"
             )
