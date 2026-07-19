@@ -14,6 +14,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
+from textual.selection import Selection
 from textual.widgets import (
     Button,
     DataTable,
@@ -72,6 +73,14 @@ STAGE_LABELS = {
 }
 
 
+class SelectableRichLog(RichLog):
+    """RichLog variant that exposes its rendered line buffer for copying."""
+
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        text = "\n".join(line.text.rstrip(" ") for line in self.lines)
+        return selection.extract(text), "\n"
+
+
 class ConfirmScreen(ModalScreen[bool]):
     CSS = """
     ConfirmScreen { align: center middle; }
@@ -105,7 +114,11 @@ class ConfirmScreen(ModalScreen[bool]):
 class WorkflowTui(App[int]):
     TITLE = "VMAF Workflow"
     SUB_TITLE = "自动下载、远程计算与结果回收"
-    BINDINGS = [("q", "request_quit", "退出"), ("ctrl+c", "cancel", "取消任务")]
+    BINDINGS = [
+        ("q", "request_quit", "退出"),
+        ("ctrl+c", "screen.copy_text", "复制选中文本"),
+        ("ctrl+x", "cancel", "取消任务"),
+    ]
     CSS = """
     Screen { background: $background; }
     #setup, #run-view { height: 1fr; padding: 1 2; }
@@ -199,7 +212,7 @@ class WorkflowTui(App[int]):
             yield Static("准备开始", id="run-summary")
             yield ProgressBar(total=len(STAGES), show_eta=False, id="progress")
             yield DataTable(id="steps", cursor_type="row")
-            yield RichLog(
+            yield SelectableRichLog(
                 id="log",
                 wrap=True,
                 auto_scroll=True,

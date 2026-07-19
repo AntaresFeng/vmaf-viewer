@@ -6,7 +6,9 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-from textual.widgets import DataTable, Input, Select, Static
+from textual.geometry import Offset
+from textual.selection import Selection
+from textual.widgets import DataTable, Input, RichLog, Select, Static
 
 from vmaf_workflow.pipeline import (
     PipelineEvent,
@@ -47,6 +49,28 @@ async def test_tui_elapsed_column_fits_full_timestamp(tmp_path: Path) -> None:
         elapsed_column = table.ordered_columns[3]
         assert elapsed_column.width >= len("01:01:01")
         assert table.get_cell(STAGES[0].value, "elapsed") == "01:01:01"
+
+
+@pytest.mark.asyncio
+async def test_tui_ctrl_c_copies_selected_log_text(tmp_path: Path) -> None:
+    app = WorkflowTui(videos_dir=tmp_path / "videos")
+    copied = []
+    app.copy_to_clipboard = copied.append
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.query_one("#setup").display = False
+        app.query_one("#run-view").display = True
+        await pilot.pause()
+        app._write_log("stdout", "copy this log line")
+        await pilot.pause()
+        log = app.query_one("#log", RichLog)
+        app.screen.selections = {
+            log: Selection.from_offsets(Offset(0, 0), Offset(9, 0))
+        }
+
+        await pilot.press("ctrl+c")
+
+        assert copied == ["copy this"]
 
 
 @pytest.mark.asyncio
@@ -195,7 +219,7 @@ async def test_tui_cancel_stops_running_pipeline(tmp_path: Path) -> None:
         await pilot.pause()
         await pilot.click("#dialog-confirm")
         await pilot.pause(0.1)
-        await pilot.click("#cancel")
+        await pilot.press("ctrl+x")
         await pilot.pause(0.2)
 
         assert created[0].cancelled.is_set()
