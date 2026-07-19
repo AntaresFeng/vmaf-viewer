@@ -30,9 +30,7 @@ def test_extract_gray_frames_batches_rawvideo_output(monkeypatch) -> None:
 
     monkeypatch.setattr(watermark_detection.subprocess, "run", fake_run)
 
-    frames = extract_gray_frames(
-        Path("video.mp4"), 12.5, 3, (4, 2), "ffmpeg"
-    )
+    frames = extract_gray_frames(Path("video.mp4"), 12.5, 3, (4, 2), "ffmpeg")
 
     assert frames.shape == (3, 2, 4)
     assert frames.ravel().tolist() == list(range(24))
@@ -143,9 +141,7 @@ def test_sample_times_avoid_video_ends() -> None:
 
 def test_normalize_reference_compensates_global_level_and_contrast() -> None:
     reference = np.arange(100, dtype=np.uint8).reshape(10, 10) + 40
-    distorted = np.clip(reference.astype(np.float32) * 1.1 + 7, 0, 255).astype(
-        np.uint8
-    )
+    distorted = np.clip(reference.astype(np.float32) * 1.1 + 7, 0, 255).astype(np.uint8)
 
     normalized = normalize_reference(reference, distorted)
 

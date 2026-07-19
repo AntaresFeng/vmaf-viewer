@@ -449,9 +449,7 @@ def _write_planned(project: WorkflowProject) -> None:
             "result_archive": project.default_result_archive_path.name,
             "score_scope": "full_frame",
             "content_exclusions": [],
-            "expected_results": [
-                f"{project.video_dir.name}/distorted_vmaf.json"
-            ],
+            "expected_results": [f"{project.video_dir.name}/distorted_vmaf.json"],
         },
     )
     project.remote_plan_script_path.write_text(

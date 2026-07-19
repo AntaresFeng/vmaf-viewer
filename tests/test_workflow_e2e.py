@@ -65,18 +65,21 @@ def test_workflow_runs_from_download_through_cleanup_and_viewer_scan(
     runner = EndToEndRunner()
     videos_dir = tmp_path / "videos"
 
-    assert main(
-        [
-            "download",
-            "--videos-dir",
-            str(videos_dir),
-            "--bvid",
-            "BV1xx411c7mD",
-            "--ytid",
-            "dQw4w9WgXcQ",
-        ],
-        runner=runner,
-    ) == 0
+    assert (
+        main(
+            [
+                "download",
+                "--videos-dir",
+                str(videos_dir),
+                "--bvid",
+                "BV1xx411c7mD",
+                "--ytid",
+                "dQw4w9WgXcQ",
+            ],
+            runner=runner,
+        )
+        == 0
+    )
 
     project_dir = videos_dir / "video0"
     reference = tmp_path / "reference.mp4"
@@ -116,15 +119,18 @@ def test_workflow_runs_from_download_through_cleanup_and_viewer_scan(
         lambda *_args: AbsentDetection(),
     )
 
-    assert main(
-        [
-            "prepare",
-            "--project-dir",
-            str(project_dir),
-            "--reference",
-            str(reference),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "prepare",
+                "--project-dir",
+                str(project_dir),
+                "--reference",
+                str(reference),
+            ]
+        )
+        == 0
+    )
     assert main(["package", "--project-dir", str(project_dir)]) == 0
     assert main(["remote-plan", "--project-dir", str(project_dir)]) == 0
 
@@ -206,13 +212,9 @@ class EndToEndRunner:
             config_path = Path(arguments[arguments.index("--config-file") + 1])
             lines = config_path.read_text(encoding="utf-8").splitlines()
             work_dir = Path(lines[lines.index("--work-dir") + 1])
-            (work_dir / "BV1xx411c7mD-1080P-AVC.mp4").write_bytes(
-                b"bilibili-media"
-            )
+            (work_dir / "BV1xx411c7mD-1080P-AVC.mp4").write_bytes(b"bilibili-media")
         if "--config-locations" in arguments:
-            config_path = Path(
-                arguments[arguments.index("--config-locations") + 1]
-            )
+            config_path = Path(arguments[arguments.index("--config-locations") + 1])
             self._write_youtube_outputs(config_path)
         return CommandResult(tuple(arguments), 0, "", "", stdin)
 

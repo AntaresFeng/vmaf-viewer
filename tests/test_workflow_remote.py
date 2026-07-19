@@ -357,22 +357,18 @@ def test_upload_completes_and_records_remote_target_and_hashes(
     assert state["upload"]["package"]["transferred"] is True
     assert state["upload"]["script"]["transferred"] is True
     assert state["upload"]["provenance"]["transferred"] is True
-    provenance = json.loads(
-        project.remote_provenance_path.read_text(encoding="utf-8")
-    )
+    provenance = json.loads(project.remote_provenance_path.read_text(encoding="utf-8"))
     assert provenance == {
         "schema_version": 1,
         "project": "video0",
         "plan_sha256": state["plan"]["sha256"],
-            "package_sha256": state["upload"]["package"]["sha256"],
-            "script_sha256": state["upload"]["script"]["sha256"],
-            "score_scope": "full_frame",
-            "content_exclusions": [],
-        }
-    manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["remote_workflow"] == {
-        "state": str(project.remote_state_path)
+        "package_sha256": state["upload"]["package"]["sha256"],
+        "script_sha256": state["upload"]["script"]["sha256"],
+        "score_scope": "full_frame",
+        "content_exclusions": [],
     }
+    manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["remote_workflow"] == {"state": str(project.remote_state_path)}
 
 
 def test_upload_uses_project_and_plan_hash_isolated_remote_directory(
@@ -389,9 +385,7 @@ def test_upload_uses_project_and_plan_hash_isolated_remote_directory(
         transport=transport,
     )
 
-    expected_work_dir = (
-        f"/home/fzx/vmaf_compare/video0/{plan_sha256}"
-    )
+    expected_work_dir = f"/home/fzx/vmaf_compare/video0/{plan_sha256}"
     assert state["remote"] == {
         "host": "3080",
         "base_work_dir": "/home/fzx/vmaf_compare",
@@ -467,8 +461,7 @@ def test_run_streams_preflight_and_script_then_records_result_hash(
     )
     uploaded_state = load_remote_state(project.remote_state_path)
     result_path = (
-        PurePosixPath(uploaded_state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
+        PurePosixPath(uploaded_state["remote"]["work_dir"]) / "video0-json.tar.gz"
     )
     transport.hashes[result_path.as_posix()] = "a" * 64
 
@@ -610,10 +603,7 @@ def test_fetch_interrupt_is_recorded_and_temp_archive_is_removed(
         transport=transport,
     )
     state = load_remote_state(project.remote_state_path)
-    remote_result = (
-        PurePosixPath(state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
-    )
+    remote_result = PurePosixPath(state["remote"]["work_dir"]) / "video0-json.tar.gz"
     transport.hashes[remote_result.as_posix()] = "a" * 64
 
     def interrupt_download(
@@ -654,19 +644,14 @@ def test_fetch_accepts_existing_remote_results_and_installs_json(
     )
     uploaded_state = load_remote_state(project.remote_state_path)
     remote_result = (
-        PurePosixPath(uploaded_state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
+        PurePosixPath(uploaded_state["remote"]["work_dir"]) / "video0-json.tar.gz"
     )
     archive_path = tmp_path / "remote-result.tar.gz"
     _write_result_archive(
         archive_path,
         _with_provenance(
             project,
-            {
-                "video0/dist_vmaf.json": {
-                    "pooled_metrics": {"vmaf": {"mean": 95}}
-                }
-            },
+            {"video0/dist_vmaf.json": {"pooled_metrics": {"vmaf": {"mean": 95}}}},
         ),
     )
     transport.download_source = archive_path
@@ -680,18 +665,19 @@ def test_fetch_accepts_existing_remote_results_and_installs_json(
     )
 
     installed = project.video_dir / "dist_vmaf.json"
-    assert json.loads(installed.read_text(encoding="utf-8"))[
-        "pooled_metrics"
-    ]["vmaf"]["mean"] == 95
+    assert (
+        json.loads(installed.read_text(encoding="utf-8"))["pooled_metrics"]["vmaf"][
+            "mean"
+        ]
+        == 95
+    )
     assert project.default_result_archive_path.read_bytes() == (
         archive_path.read_bytes()
     )
     assert state["fetch"]["status"] == "completed"
     assert state["fetch"]["source"] == "existing-remote"
     manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["results"]["archive"] == str(
-        project.default_result_archive_path
-    )
+    assert manifest["results"]["archive"] == str(project.default_result_archive_path)
     assert manifest["results"]["files"] == [str(installed)]
 
 
@@ -707,9 +693,7 @@ def test_fetch_rejects_existing_remote_archive_without_provenance(
         transport=transport,
     )
     state = load_remote_state(project.remote_state_path)
-    remote_result = PurePosixPath(state["remote"]["work_dir"]) / (
-        "video0-json.tar.gz"
-    )
+    remote_result = PurePosixPath(state["remote"]["work_dir"]) / ("video0-json.tar.gz")
     archive_path = tmp_path / "legacy-result.tar.gz"
     _write_result_archive(
         archive_path,
@@ -739,9 +723,7 @@ def test_fetch_rejects_result_provenance_for_different_plan(
         transport=transport,
     )
     state = load_remote_state(project.remote_state_path)
-    remote_result = PurePosixPath(state["remote"]["work_dir"]) / (
-        "video0-json.tar.gz"
-    )
+    remote_result = PurePosixPath(state["remote"]["work_dir"]) / ("video0-json.tar.gz")
     archive_path = tmp_path / "stale-result.tar.gz"
     _write_result_archive(
         archive_path,
@@ -783,8 +765,7 @@ def test_fetch_rejects_archive_with_extra_member_without_replacing_files(
     )
     uploaded_state = load_remote_state(project.remote_state_path)
     remote_result = (
-        PurePosixPath(uploaded_state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
+        PurePosixPath(uploaded_state["remote"]["work_dir"]) / "video0-json.tar.gz"
     )
     archive_path = tmp_path / "bad-result.tar.gz"
     _write_result_archive(
@@ -808,9 +789,7 @@ def test_fetch_rejects_archive_with_extra_member_without_replacing_files(
             transport=transport,
         )
 
-    assert json.loads(existing_result.read_text(encoding="utf-8")) == {
-        "old": True
-    }
+    assert json.loads(existing_result.read_text(encoding="utf-8")) == {"old": True}
     assert not project.default_result_archive_path.exists()
     state = load_remote_state(project.remote_state_path)
     assert state["fetch"]["status"] == "failed"
@@ -827,8 +806,7 @@ def test_fetch_rejects_invalid_json(tmp_path: Path) -> None:
     )
     uploaded_state = load_remote_state(project.remote_state_path)
     remote_result = (
-        PurePosixPath(uploaded_state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
+        PurePosixPath(uploaded_state["remote"]["work_dir"]) / "video0-json.tar.gz"
     )
     archive_path = tmp_path / "invalid-json.tar.gz"
     with tarfile.open(archive_path, "w:gz") as archive:
@@ -836,12 +814,8 @@ def test_fetch_rejects_invalid_json(tmp_path: Path) -> None:
         info = tarfile.TarInfo("video0/dist_vmaf.json")
         info.size = len(content)
         archive.addfile(info, io.BytesIO(content))
-        provenance_content = json.dumps(
-            _provenance_payload(project)
-        ).encode("utf-8")
-        provenance_info = tarfile.TarInfo(
-            "vmaf-workflow-provenance.json"
-        )
+        provenance_content = json.dumps(_provenance_payload(project)).encode("utf-8")
+        provenance_info = tarfile.TarInfo("vmaf-workflow-provenance.json")
         provenance_info.size = len(provenance_content)
         archive.addfile(
             provenance_info,
@@ -870,8 +844,7 @@ def test_fetch_rejects_symbolic_link_member(tmp_path: Path) -> None:
     )
     uploaded_state = load_remote_state(project.remote_state_path)
     remote_result = (
-        PurePosixPath(uploaded_state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
+        PurePosixPath(uploaded_state["remote"]["work_dir"]) / "video0-json.tar.gz"
     )
     archive_path = tmp_path / "symlink.tar.gz"
     with tarfile.open(archive_path, "w:gz") as archive:
@@ -879,12 +852,8 @@ def test_fetch_rejects_symbolic_link_member(tmp_path: Path) -> None:
         info.type = tarfile.SYMTYPE
         info.linkname = "../../escape.json"
         archive.addfile(info)
-        provenance_content = json.dumps(
-            _provenance_payload(project)
-        ).encode("utf-8")
-        provenance_info = tarfile.TarInfo(
-            "vmaf-workflow-provenance.json"
-        )
+        provenance_content = json.dumps(_provenance_payload(project)).encode("utf-8")
+        provenance_info = tarfile.TarInfo("vmaf-workflow-provenance.json")
         provenance_info.size = len(provenance_content)
         archive.addfile(
             provenance_info,
@@ -915,8 +884,7 @@ def test_fetch_rejects_remote_hash_drift_after_completed_run(
     )
     uploaded_state = load_remote_state(project.remote_state_path)
     result_path = (
-        PurePosixPath(uploaded_state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
+        PurePosixPath(uploaded_state["remote"]["work_dir"]) / "video0-json.tar.gz"
     )
     transport.hashes[result_path.as_posix()] = "a" * 64
     run_remote_project(
@@ -958,10 +926,7 @@ def test_fetch_rolls_back_all_results_when_install_fails_midway(
         transport=transport,
     )
     state = load_remote_state(project.remote_state_path)
-    remote_result = (
-        PurePosixPath(state["remote"]["work_dir"])
-        / "video0-json.tar.gz"
-    )
+    remote_result = PurePosixPath(state["remote"]["work_dir"]) / "video0-json.tar.gz"
     archive_path = tmp_path / "new-results.tar.gz"
     _write_result_archive(
         archive_path,
@@ -1030,9 +995,7 @@ def _write_remote_project(tmp_path: Path) -> WorkflowProject:
             {
                 "archive_path": str(package_path),
                 "archive_root": "video0",
-                "inventory_sha256": sha256_file(
-                    project.media_inventory_path
-                ),
+                "inventory_sha256": sha256_file(project.media_inventory_path),
                 "media_files": [
                     {"path": "ref.mp4", "role": "reference", "size_bytes": 1},
                     {"path": "dist.mp4", "role": "distorted", "size_bytes": 1},
@@ -1075,9 +1038,7 @@ def _write_remote_project(tmp_path: Path) -> WorkflowProject:
 
 
 def _add_second_distorted(project: WorkflowProject) -> None:
-    inventory = json.loads(
-        project.media_inventory_path.read_text(encoding="utf-8")
-    )
+    inventory = json.loads(project.media_inventory_path.read_text(encoding="utf-8"))
     second = {
         "path": "dist2.mp4",
         "role": "distorted",
@@ -1093,9 +1054,7 @@ def _add_second_distorted(project: WorkflowProject) -> None:
         project.package_manifest_path.read_text(encoding="utf-8")
     )
     package_manifest["media_files"].append(second)
-    package_manifest["inventory_sha256"] = sha256_file(
-        project.media_inventory_path
-    )
+    package_manifest["inventory_sha256"] = sha256_file(project.media_inventory_path)
     project.package_manifest_path.write_text(
         json.dumps(package_manifest),
         encoding="utf-8",
@@ -1129,9 +1088,7 @@ def _write_result_archive(
 
 
 def _provenance_payload(project: WorkflowProject) -> dict[str, object]:
-    return json.loads(
-        project.remote_provenance_path.read_text(encoding="utf-8")
-    )
+    return json.loads(project.remote_provenance_path.read_text(encoding="utf-8"))
 
 
 def _with_provenance(

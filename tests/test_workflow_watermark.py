@@ -119,9 +119,7 @@ def test_maps_true_resolution_through_easyvmaf_stretch(
     expected: tuple[int, int, int, int],
 ) -> None:
     real_edges = map_normalized_edges(NORMALIZED_EDGES, *real_size)
-    target_edges = map_real_edges_to_target(
-        real_edges, *real_size, *target_size
-    )
+    target_edges = map_real_edges_to_target(real_edges, *real_size, *target_size)
 
     bbox = outward_bbox(target_edges, *target_size, margin)
 
@@ -192,12 +190,8 @@ def test_prepare_present_writes_exclusion_summary_and_audit_mappings(
         }
     ]
     summary = _read_json(project.watermark_summary_path)
-    assert summary["workflow"]["representative_path"] == (
-        f"{BVID}-1080P-AVC.mp4"
-    )
-    mappings = {
-        item["path"]: item for item in summary["workflow"]["media_mappings"]
-    }
+    assert summary["workflow"]["representative_path"] == (f"{BVID}-1080P-AVC.mp4")
+    mappings = {item["path"]: item for item in summary["workflow"]["media_mappings"]}
     assert mappings["youtube-1440.mp4"]["real_pixel_edges"]["right"] == 2432
     assert mappings["reference.mp4"]["width"] == 3840
 
@@ -318,8 +312,7 @@ def test_package_and_remote_plan_apply_filter_to_every_command(
     with tarfile.open(project.default_package_path, "r") as archive:
         names = archive.getnames()
     assert (
-        f"{project.video_dir.name}/.workflow/watermark-analysis/summary.json"
-        in names
+        f"{project.video_dir.name}/.workflow/watermark-analysis/summary.json" in names
     )
     assert not any(name.endswith(".png") for name in names)
     assert plan["score_scope"] == "content_excluding_regions"

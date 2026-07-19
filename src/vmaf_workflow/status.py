@@ -30,9 +30,7 @@ class WorkflowStatus:
 
 def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
     if not project.video_dir.is_dir():
-        raise WorkflowStatusError(
-            f"project directory is required: {project.video_dir}"
-        )
+        raise WorkflowStatusError(f"project directory is required: {project.video_dir}")
 
     manifest = load_optional_json_object(project.manifest_path, "manifest.json")
     inventory = load_optional_json_object(
@@ -93,8 +91,7 @@ def inspect_workflow_status(project: WorkflowProject) -> WorkflowStatus:
     if package_archive is None:
         package_archive = project.default_package_path
     package_absence_expected = (
-        cleanup_status in {"pending", "completed"}
-        and not package_archive.exists()
+        cleanup_status in {"pending", "completed"} and not package_archive.exists()
     )
     if not package_archive.is_file() and not package_absence_expected:
         package_missing.append(str(package_archive))
@@ -387,9 +384,7 @@ def _validate_watermark_inventory(
     representative_path = representative.get("path")
     if not isinstance(representative_path, str):
         raise WorkflowStatusError("watermark representative path is invalid")
-    relative = _safe_relative_path(
-        representative_path, "watermark representative path"
-    )
+    relative = _safe_relative_path(representative_path, "watermark representative path")
     if not project.video_dir.joinpath(*relative.parts).is_file():
         raise WorkflowStatusError(
             f"watermark representative is missing: {representative_path}"
@@ -429,15 +424,11 @@ def _validate_watermark_inventory(
     for dimension in ("width", "height"):
         value = analysis.get(dimension)
         if not isinstance(value, int) or value <= 0:
-            raise WorkflowStatusError(
-                f"watermark analysis {dimension} is invalid"
-            )
+            raise WorkflowStatusError(f"watermark analysis {dimension} is invalid")
     summary_path = analysis.get("summary_path")
     expected_summary = ".workflow/watermark-analysis/summary.json"
     if summary_path != expected_summary:
-        raise WorkflowStatusError(
-            f"watermark summary_path must be {expected_summary}"
-        )
+        raise WorkflowStatusError(f"watermark summary_path must be {expected_summary}")
     summary = load_optional_json_object(
         project.watermark_summary_path,
         "watermark-analysis/summary.json",
@@ -502,14 +493,9 @@ def _remote_plan_matches_inputs(
 ) -> bool:
     if remote_plan.get("schema_version") != 2:
         return False
-    if (
-        remote_plan.get("watermark_mapping_contract")
-        != "normalized-real-easyvmaf-v1"
-    ):
+    if remote_plan.get("watermark_mapping_contract") != "normalized-real-easyvmaf-v1":
         return False
-    if remote_plan.get("inventory_sha256") != package_manifest.get(
-        "inventory_sha256"
-    ):
+    if remote_plan.get("inventory_sha256") != package_manifest.get("inventory_sha256"):
         return False
     if remote_plan.get("watermark_analysis_sha256") != package_manifest.get(
         "watermark_analysis_sha256"

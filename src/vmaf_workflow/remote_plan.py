@@ -109,9 +109,7 @@ def write_remote_plan(
         "easyvmaf_executable": executable,
         "package_archive": package_archive,
         "inventory_sha256": package_manifest["inventory_sha256"],
-        "watermark_analysis_sha256": package_manifest.get(
-            "watermark_analysis_sha256"
-        ),
+        "watermark_analysis_sha256": package_manifest.get("watermark_analysis_sha256"),
         "result_archive": result_archive,
         "result_provenance": RESULT_PROVENANCE_NAME,
         "environment_preflight_argument": "--environment-only",
@@ -130,9 +128,7 @@ def write_remote_plan(
                 "required_option": "-pre_filter",
             },
         },
-        "score_scope": (
-            "content_excluding_regions" if exclusions else "full_frame"
-        ),
+        "score_scope": ("content_excluding_regions" if exclusions else "full_frame"),
         "content_exclusions": exclusions,
         "reference": reference,
         "commands": [command.to_manifest() for command in commands],
@@ -272,9 +268,7 @@ def _entry_edges_in_target(
         raise RemotePlanError(str(exc)) from exc
 
 
-def _model_for_distorted(
-    distorted: dict[str, Any], settings: EasyVmafSettings
-) -> str:
+def _model_for_distorted(distorted: dict[str, Any], settings: EasyVmafSettings) -> str:
     height = distorted.get("height")
     if isinstance(height, int):
         return "4K" if height >= settings.model_4k_min_height else "HD"
@@ -347,8 +341,7 @@ def _normalized_exclusions(
         {
             "kind": "bilibili_watermark",
             "normalized_edges": {
-                name: float(edges[name])
-                for name in ("left", "top", "right", "bottom")
+                name: float(edges[name]) for name in ("left", "top", "right", "bottom")
             },
         }
     ]
@@ -471,9 +464,7 @@ def _validate_unique_result_paths(commands: list[PlannedCommand]) -> None:
     seen = set()
     for command in commands:
         if command.expected_result in seen:
-            raise RemotePlanError(
-                f"result path collision: {command.expected_result}"
-            )
+            raise RemotePlanError(f"result path collision: {command.expected_result}")
         seen.add(command.expected_result)
 
 
@@ -523,7 +514,7 @@ def _write_script(
         "}",
         "",
         "require_command() {",
-        "  command -v \"$1\" >/dev/null 2>&1 || die \"$1 is required but was not found in PATH\"",
+        '  command -v "$1" >/dev/null 2>&1 || die "$1 is required but was not found in PATH"',
         "}",
         "",
         "check_version() {",
@@ -532,38 +523,29 @@ def _write_script(
         "  local output",
         "  local line",
         "  local major",
-        "  output=$(\"$tool\" -version 2>&1) || die \"failed to run $tool -version\"",
+        '  output=$("$tool" -version 2>&1) || die "failed to run $tool -version"',
         "  line=${output%%$'\\n'*}",
-        "  info \"$line\"",
+        '  info "$line"',
         "  if [[ $line =~ version[[:space:]]+[^0-9]*([0-9]+) ]]; then",
         "    major=${BASH_REMATCH[1]}",
         "  else",
-        "    die \"could not parse $tool major version: $line\"",
+        '    die "could not parse $tool major version: $line"',
         "  fi",
-        "  (( major >= minimum )) || die \"$tool major version $major is below required $minimum\"",
+        '  (( major >= minimum )) || die "$tool major version $major is below required $minimum"',
         "}",
         "",
         f"EASYVMAF_REPO={_shell_quote(settings.repo_dir.as_posix())}",
-        (
-            "EASYVMAF_EXECUTABLE="
-            f"{_shell_quote(settings.executable_path().as_posix())}"
-        ),
+        (f"EASYVMAF_EXECUTABLE={_shell_quote(settings.executable_path().as_posix())}"),
         f"EASYVMAF_REQUIRED_BRANCH={_shell_quote(settings.required_branch)}",
         f"PACKAGE_ARCHIVE={_shell_quote(package_archive)}",
         f"RESULT_ARCHIVE={_shell_quote(result_archive)}",
         f"PROVENANCE_FILE={_shell_quote(result_provenance)}",
-        'MODE=${1:-run}',
+        "MODE=${1:-run}",
         "",
-        (
-            '[[ $# -le 1 ]] '
-            '|| die "usage: $0 [--environment-only|--preflight-only]"'
-        ),
+        ('[[ $# -le 1 ]] || die "usage: $0 [--environment-only|--preflight-only]"'),
         'case "$MODE" in',
         "  run|--environment-only|--preflight-only) ;;",
-        (
-            '  *) die "usage: $0 '
-            '[--environment-only|--preflight-only]" ;;'
-        ),
+        ('  *) die "usage: $0 [--environment-only|--preflight-only]" ;;'),
         "esac",
         "",
         "require_command tar",
@@ -613,7 +595,7 @@ def _write_script(
             '[[ "$easyvmaf_help" == *"-pre_filter"* ]] '
             '|| die "easyVmaf does not provide required -pre_filter option"'
         ),
-        'if [[ $MODE == --environment-only ]]; then',
+        "if [[ $MODE == --environment-only ]]; then",
         '  info "environment preflight complete"',
         "  exit 0",
         "fi",
@@ -629,7 +611,7 @@ def _write_script(
             'tar -tf "$PACKAGE_ARCHIVE" >/dev/null '
             '|| die "package archive is not a readable tar file: $PACKAGE_ARCHIVE"'
         ),
-        'if [[ $MODE == --preflight-only ]]; then',
+        "if [[ $MODE == --preflight-only ]]; then",
         '  info "preflight complete"',
         "  exit 0",
         "fi",

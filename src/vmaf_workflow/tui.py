@@ -177,9 +177,13 @@ class WorkflowTui(App[int]):
             )
             yield Static("", id="project-preview")
             yield Label("B站 URL 或 BVID（可选）", classes="field-label")
-            yield Input(placeholder="BV... 或 https://www.bilibili.com/video/...", id="bvid")
+            yield Input(
+                placeholder="BV... 或 https://www.bilibili.com/video/...", id="bvid"
+            )
             yield Label("YouTube URL 或视频 ID（可选）", classes="field-label")
-            yield Input(placeholder="11 位 ID 或 https://www.youtube.com/watch?v=...", id="ytid")
+            yield Input(
+                placeholder="11 位 ID 或 https://www.youtube.com/watch?v=...", id="ytid"
+            )
             yield Label("参考视频路径", classes="field-label")
             yield Input(placeholder=r"C:\path\reference.mp4", id="reference")
             with Horizontal(id="cleanup-row"):
@@ -267,7 +271,9 @@ class WorkflowTui(App[int]):
             self.exit(self.exit_code)
             return
         self.push_screen(
-            ConfirmScreen("任务仍在运行", "退出会取消当前子进程。确认退出？", "取消并退出"),
+            ConfirmScreen(
+                "任务仍在运行", "退出会取消当前子进程。确认退出？", "取消并退出"
+            ),
             self._quit_confirmed,
         )
 
@@ -295,7 +301,9 @@ class WorkflowTui(App[int]):
             f"自动 cleanup: {'是' if request.cleanup else '否'}"
         )
         self.request = request
-        self.push_screen(ConfirmScreen("确认自动执行", summary, "开始"), self._start_confirmed)
+        self.push_screen(
+            ConfirmScreen("确认自动执行", summary, "开始"), self._start_confirmed
+        )
 
     def _start_confirmed(self, confirmed: bool | None) -> None:
         if confirmed and self.request is not None:
@@ -367,7 +375,11 @@ class WorkflowTui(App[int]):
         self.query_one("#cancel", Button).disabled = True
         self.query_one("#back", Button).disabled = False
         self.query_one("#retry", Button).disabled = result == 0
-        if result == 0 and self.pipeline is not None and self.pipeline.project is not None:
+        if (
+            result == 0
+            and self.pipeline is not None
+            and self.pipeline.project is not None
+        ):
             project = self.pipeline.project.video_dir
             json_count = len(list(project.glob("*_vmaf.json")))
             self.query_one("#completion", Static).update(
@@ -376,7 +388,9 @@ class WorkflowTui(App[int]):
             )
             self.query_one("#run-summary", Static).update("全部步骤已完成")
         elif result == 130:
-            self.query_one("#run-summary", Static).update("工作流已取消，可重试当前步骤")
+            self.query_one("#run-summary", Static).update(
+                "工作流已取消，可重试当前步骤"
+            )
         else:
             self.query_one("#run-summary", Static).update("工作流失败，可重试失败步骤")
 
@@ -533,13 +547,20 @@ class WorkflowTui(App[int]):
 
     def _update_mode(self) -> None:
         resume = self._mode() == "resume"
-        for selector in ("#project-select-label", "#project-select", "#project-path-label", "#project-path"):
+        for selector in (
+            "#project-select-label",
+            "#project-select",
+            "#project-path-label",
+            "#project-path",
+        ):
             self.query_one(selector).display = resume
         if resume:
             raw_path = self.query_one("#project-path", Input).value.strip()
             if raw_path and Path(raw_path).is_dir():
                 self._load_project(Path(raw_path))
-            self.query_one("#project-preview", Static).update("选择已有项目后将从最早未完成步骤继续")
+            self.query_one("#project-preview", Static).update(
+                "选择已有项目后将从最早未完成步骤继续"
+            )
         else:
             self.query_one("#bvid", Input).disabled = False
             self.query_one("#ytid", Input).disabled = False
@@ -567,7 +588,10 @@ class WorkflowTui(App[int]):
 
     def _project_options(self) -> list[tuple[str, str]]:
         paths = list(reversed(video_project_dirs(self.videos_dir)))
-        if self.initial_project_dir is not None and self.initial_project_dir not in paths:
+        if (
+            self.initial_project_dir is not None
+            and self.initial_project_dir not in paths
+        ):
             paths.insert(0, self.initial_project_dir)
         return [(str(path), str(path)) for path in paths]
 
@@ -598,7 +622,10 @@ def run_interactive(
     require_tty: bool = True,
 ) -> int:
     if require_tty and (not sys.stdin.isatty() or not sys.stdout.isatty()):
-        print("vmaf-workflow interactive: an interactive terminal is required", file=sys.stderr)
+        print(
+            "vmaf-workflow interactive: an interactive terminal is required",
+            file=sys.stderr,
+        )
         return 2
     result = WorkflowTui(videos_dir=videos_dir, project_dir=project_dir).run()
     return 0 if result is None else int(result)

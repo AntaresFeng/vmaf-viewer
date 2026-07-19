@@ -171,9 +171,7 @@ def _watermark_summary_file(
     summary_path = analysis.get("summary_path")
     expected = ".workflow/watermark-analysis/summary.json"
     if summary_path != expected:
-        raise PackageError(
-            f"watermark analysis summary_path must be {expected}"
-        )
+        raise PackageError(f"watermark analysis summary_path must be {expected}")
     source_path = _project_relative_path(project.video_dir, summary_path)
     if not source_path.is_file():
         raise PackageError(f"watermark analysis summary is missing: {summary_path}")

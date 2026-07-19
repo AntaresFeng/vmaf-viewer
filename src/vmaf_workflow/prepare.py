@@ -80,9 +80,7 @@ def update_manifest_pointers(
     manifest: dict[str, Any] | None = None,
 ) -> None:
     manifest = (
-        _load_existing_manifest(project.manifest_path)
-        if manifest is None
-        else manifest
+        _load_existing_manifest(project.manifest_path) if manifest is None else manifest
     )
     manifest["project_dir"] = str(project.video_dir)
     manifest["workflow_dir"] = str(project.workflow_dir)

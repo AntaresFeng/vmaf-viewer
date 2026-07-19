@@ -206,9 +206,7 @@ def test_workflow_project_paths_and_write_text_create_parent_dirs(
         project.workflow_dir / "remote-upload.log"
     )
     assert project.remote_run_log_path == project.workflow_dir / "remote-run.log"
-    assert project.remote_fetch_log_path == (
-        project.workflow_dir / "remote-fetch.log"
-    )
+    assert project.remote_fetch_log_path == (project.workflow_dir / "remote-fetch.log")
     assert project.default_result_archive_path == (
         project.workflow_dir / "video0-json.tar.gz"
     )

@@ -73,7 +73,9 @@ def download_sources(
         settings or default_settings(),
         videos_dir=videos_dir,
     )
-    explicit_project = project_from_dir(project_dir) if project_dir is not None else None
+    explicit_project = (
+        project_from_dir(project_dir) if project_dir is not None else None
+    )
     reuse_project = project_dir is not None and project_dir.exists()
 
     try:
@@ -167,9 +169,13 @@ def _source_incomplete(source: object, identity_key: str) -> bool:
     if not isinstance(source, dict) or not source.get(identity_key):
         return False
     downloads = source.get("downloads")
-    return not isinstance(downloads, list) or not downloads or any(
-        not isinstance(item, dict) or item.get("status") != "downloaded"
-        for item in downloads
+    return (
+        not isinstance(downloads, list)
+        or not downloads
+        or any(
+            not isinstance(item, dict) or item.get("status") != "downloaded"
+            for item in downloads
+        )
     )
 
 
@@ -253,16 +259,16 @@ def _run_bilibili_downloads(
     manifest["bilibili"]["preflight_streams"] = [
         stream.to_manifest() for stream in streams
     ]
-    manifest["bilibili"]["download_plan"] = [
-        stream.to_manifest() for stream in plan
-    ]
+    manifest["bilibili"]["download_plan"] = [stream.to_manifest() for stream in plan]
     manifest["bilibili"]["skipped"] = skipped
 
     exit_code = 0
     fresh_streams = []
     if plan:
         fresh_result = runner.run(
-            bbdown_info_argv(settings.bbdown.exe_path, bvid, project.bbdown_config_path),
+            bbdown_info_argv(
+                settings.bbdown.exe_path, bvid, project.bbdown_config_path
+            ),
             output_encoding=output_encoding,
         )
         _append_command(manifest, fresh_result)

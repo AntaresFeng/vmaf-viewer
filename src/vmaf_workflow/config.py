@@ -25,9 +25,7 @@ FALLBACK_1080_LABEL = "1080P 高清"
 # yt-dlp CLI format selector. `is_target_format` below must mirror this filter
 # when post-processing yt-dlp JSON output, so the two are kept together.
 YTDLP_MIN_HEIGHT = 1000
-YTDLP_FORMAT_SELECTOR = (
-    f"all[height>={YTDLP_MIN_HEIGHT}][vcodec!=none][acodec=none]"
-)
+YTDLP_FORMAT_SELECTOR = f"all[height>={YTDLP_MIN_HEIGHT}][vcodec!=none][acodec=none]"
 
 
 def is_target_format(format_info: dict[str, Any]) -> bool:

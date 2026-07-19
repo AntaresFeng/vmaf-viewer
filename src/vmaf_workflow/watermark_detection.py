@@ -128,9 +128,7 @@ class DetectionResult:
                 "minimum_frequency": self.settings.minimum_frequency,
                 "minimum_median_z": self.settings.minimum_median_z,
                 "sync_radius_frames": self.settings.sync_radius_frames,
-                "sample_workers": min(
-                    MAX_SAMPLE_WORKERS, self.settings.samples
-                ),
+                "sample_workers": min(MAX_SAMPLE_WORKERS, self.settings.samples),
             },
             "alignments": list(self.alignments),
             "candidates": [asdict(candidate) for candidate in self.candidates],
@@ -219,7 +217,13 @@ def detect_watermark(
         )
     except WatermarkDetectionError:
         raise
-    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError) as exc:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        IndexError,
+        subprocess.SubprocessError,
+    ) as exc:
         raise WatermarkDetectionError(f"watermark detection failed: {exc}") from exc
 
     state: Literal["present", "absent", "uncertain"]
@@ -412,10 +416,7 @@ def alignment_score(reference: np.ndarray, distorted: np.ndarray) -> float:
     height, width = reference.shape
     y0, y1 = round(height * 0.2), round(height * 0.8)
     x0, x1 = round(width * 0.2), round(width * 0.8)
-    residual = np.abs(
-        blurred_distorted[y0:y1, x0:x1]
-        - blurred_reference[y0:y1, x0:x1]
-    )
+    residual = np.abs(blurred_distorted[y0:y1, x0:x1] - blurred_reference[y0:y1, x0:x1])
     return float(np.median(residual))
 
 
@@ -457,7 +458,11 @@ def choose_reference_frame(
             ]
         )
     scored = [
-        (candidate, candidate_time - timestamp, alignment_score(candidate, distorted_frame))
+        (
+            candidate,
+            candidate_time - timestamp,
+            alignment_score(candidate, distorted_frame),
+        )
         for candidate_time, candidate in zip(candidate_times, candidates, strict=True)
     ]
     return min(scored, key=lambda item: item[2])
@@ -501,11 +506,16 @@ def analyze_sample(
     positive, absolute = standardized_positive_residual(
         reference_frame, distorted_frame
     )
-    return positive, absolute, distorted_frame, {
-        "timestamp": round(timestamp, 6),
-        "reference_offset_seconds": round(offset, 6),
-        "alignment_score": round(score, 6),
-    }
+    return (
+        positive,
+        absolute,
+        distorted_frame,
+        {
+            "timestamp": round(timestamp, 6),
+            "reference_offset_seconds": round(offset, 6),
+            "alignment_score": round(score, 6),
+        },
+    )
 
 
 def analyze_samples(
@@ -589,8 +599,10 @@ def find_candidates(
         score = component_median_z * component_mean_frequency * math.log1p(pixels)
         center_x = x + box_width / 2
         center_y = y + box_height / 2
-        corner = ("top" if center_y < height / 2 else "bottom") + "-" + (
-            "left" if center_x < width / 2 else "right"
+        corner = (
+            ("top" if center_y < height / 2 else "bottom")
+            + "-"
+            + ("left" if center_x < width / 2 else "right")
         )
         candidates.append(
             Candidate(
@@ -732,8 +744,14 @@ def outward_bbox(
 
 def _validate_normalized_edges(edges: dict[str, float]) -> None:
     values = [edges.get(name) for name in ("left", "top", "right", "bottom")]
-    if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in values):
-        raise WatermarkGeometryError("normalized watermark edges must be finite numbers")
+    if not all(
+        isinstance(value, (int, float)) and math.isfinite(value) for value in values
+    ):
+        raise WatermarkGeometryError(
+            "normalized watermark edges must be finite numbers"
+        )
     left, top, right, bottom = [float(value) for value in values]
     if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
-        raise WatermarkGeometryError("normalized watermark edges must form a box inside the frame")
+        raise WatermarkGeometryError(
+            "normalized watermark edges must form a box inside the frame"
+        )
