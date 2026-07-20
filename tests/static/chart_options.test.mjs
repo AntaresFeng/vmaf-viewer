@@ -187,20 +187,36 @@ test("detail chart rerenders in merge mode so dataZoom slider state is preserved
   });
   const [overviewChart, detailChart] = createdCharts;
   state.comparison = {
-    common_range: { start: 0, end: 100 },
+    frame_domain: { start: 10, end: 100 },
     summary: [{ id: "a", name: "A" }],
-    series: { a: { points: [[0, 95], [100, 90]] } },
+    series: { a: { points: [[10, 95], [40, 92], [100, 90]] } },
   };
   state.metricsByFile = new Map([["a", ["vmaf", "integer_motion"]]]);
   state.activeDetailMetrics = new Set(["integer_motion"]);
   state.extraSeries = new Map([
-    ["integer_motion", { a: { integer_motion: { points: [[0, 1], [100, 2]] } } }],
+    ["integer_motion", { a: { integer_motion: { points: [[10, 1], [40, 1.5], [100, 2]] } } }],
   ]);
 
   renderLineCharts();
 
   assert.equal(overviewChart.setOptionCalls.at(-1)[1], true);
+  assert.deepEqual(toHostValue(overviewChart.setOptionCalls.at(-1)[0].xAxis), {
+    type: "value",
+    name: "Frame",
+    nameGap: 6,
+    axisLine: { lineStyle: { color: "#c6cabf" } },
+    splitLine: { lineStyle: { color: "#eceee9" } },
+    min: 10,
+    max: 100,
+  });
+  assert.deepEqual(toHostValue(overviewChart.setOptionCalls.at(-1)[0].series[0].data), [
+    [10, 95],
+    [40, 92],
+    [100, 90],
+  ]);
   assert.equal(detailChart.setOptionCalls.at(-1)[1], undefined);
+  assert.equal(detailChart.setOptionCalls.at(-1)[0].xAxis.min, 10);
+  assert.equal(detailChart.setOptionCalls.at(-1)[0].xAxis.max, 100);
   assert.deepEqual(detailChart.onCalls.at(-1)[0], "datazoom");
   assert.equal(detailChart.setOptionCalls.at(-1)[0].dataZoom[1].showDataShadow, false);
 });
@@ -224,7 +240,7 @@ test("range detail series requests merge into existing full-range cache", async 
   });
   state.comparisonRequestId = 1;
   state.comparison = {
-    common_range: { start: 0, end: 100 },
+    frame_domain: { start: 0, end: 100 },
     summary: [{ id: "a", name: "A" }],
   };
   state.selected = new Set(["a"]);
@@ -277,7 +293,7 @@ test("detail chart clears removed metric series while using merge mode", () => {
   });
   const detailChart = createdCharts[1];
   state.comparison = {
-    common_range: { start: 0, end: 100 },
+    frame_domain: { start: 0, end: 100 },
     summary: [{ id: "a", name: "A" }],
     series: { a: { points: [[0, 95], [100, 90]] } },
   };
@@ -328,7 +344,7 @@ test("detail chart hides stale empty-state title when metrics become active", ()
   });
   const detailChart = createdCharts[1];
   state.comparison = {
-    common_range: { start: 0, end: 100 },
+    frame_domain: { start: 0, end: 100 },
     summary: [{ id: "a", name: "A" }],
     series: { a: { points: [[0, 95], [100, 90]] } },
   };
@@ -399,7 +415,7 @@ test("detail range loading waits 400ms and only requests the final zoom range", 
   });
   const detailChart = createdCharts[1];
   state.comparison = {
-    common_range: { start: 0, end: 1000 },
+    frame_domain: { start: 100, end: 1100 },
     summary: [{ id: "a", name: "A" }],
     series: { a: { points: [[0, 95], [1000, 90]] } },
   };
@@ -428,8 +444,8 @@ test("detail range loading waits 400ms and only requests the final zoom range", 
     {
       file_ids: ["a"],
       metrics: ["integer_motion"],
-      start: 300,
-      end: 400,
+      start: 400,
+      end: 500,
       max_points: 5000,
     },
   ]);
@@ -489,7 +505,7 @@ test("primary and detail range loading use independent pending timers", async ()
   const [mainChart, detailChart] = createdCharts;
   state.comparisonRequestId = 1;
   state.comparison = {
-    common_range: { start: 0, end: 1000 },
+    frame_domain: { start: 0, end: 1000 },
     summary: [{ id: "a", name: "A" }],
     series: { a: { metric: "vmaf", points: [[0, 95], [1000, 90]] } },
   };
@@ -575,7 +591,7 @@ test("primary range loading waits 400ms, fetches the final zoom range, and refre
   const mainChart = createdCharts[0];
   state.comparisonRequestId = 1;
   state.comparison = {
-    common_range: { start: 0, end: 1000 },
+    frame_domain: { start: 0, end: 1000 },
     summary: [{ id: "a", name: "A" }],
     series: {
       a: {
@@ -680,7 +696,7 @@ test("primary range loading skips zoom windows wider than 5000 frames", async ()
 
   const mainChart = createdCharts[0];
   state.comparison = {
-    common_range: { start: 0, end: 10000 },
+    frame_domain: { start: 0, end: 10000 },
     summary: [{ id: "a", name: "A" }],
     series: { a: { metric: "vmaf", points: [[0, 95], [10000, 90]] } },
   };
@@ -757,7 +773,7 @@ test("primary range loading groups visible files by their selected primary metri
   const mainChart = createdCharts[0];
   state.comparisonRequestId = 7;
   state.comparison = {
-    common_range: { start: 0, end: 1000 },
+    frame_domain: { start: 0, end: 1000 },
     summary: [
       { id: "a", name: "A" },
       { id: "b", name: "B" },
@@ -839,7 +855,7 @@ test("primary range cache survives hiding and re-showing a file in the same comp
   const mainChart = createdCharts[0];
   state.comparisonRequestId = 1;
   state.comparison = {
-    common_range: { start: 0, end: 1000 },
+    frame_domain: { start: 0, end: 1000 },
     summary: [
       { id: "a", name: "A" },
       { id: "b", name: "B" },
@@ -916,7 +932,7 @@ test("activating a detail metric while zoomed loads that metric for the current 
   });
   state.comparisonRequestId = 1;
   state.comparison = {
-    common_range: { start: 0, end: 1000 },
+    frame_domain: { start: 0, end: 1000 },
     summary: [{ id: "a", name: "A" }],
     series: { a: { points: [[0, 95], [1000, 90]] } },
   };

@@ -2,7 +2,7 @@
 
 VMAF Compare is a local toolkit for inspecting and ranking libvmaf JSON, CSV, or XML output from multiple video encodes. It is built for the common workflow where you already generated one VMAF log file per distorted encode and want to compare those degraded videos against each other, not only inspect where a single encode differs from the reference.
 
-The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend. It scans a directory of `*.json`, `*.csv`, and `*.xml` files, parses frame-level metrics, compares selected files over their shortest common frame range, and ranks them by mean VMAF by default.
+The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend. It scans a directory of `*.json`, `*.csv`, and `*.xml` files, parses frame-level metrics, plots every log against its original frame numbers, and ranks each log by the mean of all its finite VMAF samples by default. Files with different frame counts or libvmaf subsampling intervals are not truncated to a shared prefix.
 
 ## Screenshots
 
@@ -18,6 +18,7 @@ The main app is `vmaf-viewer`, a FastAPI backend with a static ECharts frontend.
 - Compare 4-6 large VMAF log files without loading unnecessary detailed series up front.
 - Rank encodes by summary statistics such as mean VMAF and threshold counts.
 - Plot per-frame VMAF, local zoom/detail metrics, histograms, CDFs, and boxplots in a browser UI.
+- Preserve non-contiguous frame numbers produced by libvmaf `n_subsample` and align curves on a shared numeric frame axis.
 - Switch the scan directory from the command line, environment variable, or the viewer's top `Dir` field.
 - Cache parsed files during a viewer session so repeated comparisons stay responsive.
 

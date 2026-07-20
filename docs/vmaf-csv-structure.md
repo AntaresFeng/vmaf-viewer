@@ -14,6 +14,10 @@ CSV uses `Frame` as the frame index column (integer, 0-based, first column). Thi
 
 `CsvVmafParser._FRAME_COL = "Frame"` already handles this; the JSON/XML parsers use `frameNum` / `frameNum`.
 
+Frame indexes identify source-frame positions and are not required to be contiguous. For example, FFmpeg libvmaf with `n_subsample=30` records frame indexes `0, 30, 60, ...`; it does not renumber the sampled frames to `0, 1, 2, ...`.
+
+The viewer therefore requires every frame index to be explicit, non-negative, unique, and strictly increasing. Series points are returned to the frontend as `[frameNum, value]`. When several files are selected, each file keeps all of its own samples and statistics; curves share the numeric frame axis but are not intersected, padded, interpolated, or truncated to a common prefix.
+
 ## Header row quirk
 
 FFmpeg libvmaf writes a **trailing comma** in the header, e.g.:

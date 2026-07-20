@@ -38,15 +38,27 @@ def select_primary_metric(metric_names: Iterable[str]) -> str | None:
     return next((name for name in metric_names if "vmaf" in name), None)
 
 
-def _frame_num(raw: object, fallback: int, record: FileRecord) -> int:
+def _frame_num(
+    raw: object, record: FileRecord, *, allow_decimal_string: bool = True
+) -> int:
     if raw is _MISSING_FRAME_NUM:
-        raw = fallback
-    try:
-        return int(raw)
-    except (TypeError, ValueError, OverflowError) as exc:
+        raise VmafParseError(f"{record.relative_path} is missing frameNum")
+
+    if isinstance(raw, bool):
+        value = None
+    elif isinstance(raw, int):
+        value = raw
+    elif allow_decimal_string and isinstance(raw, str):
+        text = raw.strip()
+        value = int(text) if text.isascii() and text.isdecimal() else None
+    else:
+        value = None
+
+    if value is None or value < 0:
         raise VmafParseError(
             f"{record.relative_path} has invalid frameNum: {raw!r}"
-        ) from exc
+        )
+    return value
 
 
 def _metric_value(raw: object) -> float:
@@ -85,7 +97,11 @@ class JsonVmafParser:
                 continue
             raw_frames.append(
                 RawFrame(
-                    frame_num=item.get("frameNum", _MISSING_FRAME_NUM),
+                    frame_num=_frame_num(
+                        item.get("frameNum", _MISSING_FRAME_NUM),
+                        record,
+                        allow_decimal_string=False,
+                    ),
                     metrics=metrics,
                 )
             )
@@ -117,7 +133,7 @@ class CsvVmafParser:
                 ]
                 return [
                     RawFrame(
-                        frame_num=row.get(self._FRAME_COL) or _MISSING_FRAME_NUM,
+                        frame_num=row.get(self._FRAME_COL, _MISSING_FRAME_NUM),
                         metrics={name: row.get(name) for name in metric_names},
                     )
                     for row in reader
@@ -200,8 +216,19 @@ def _build_parsed(record: FileRecord, frames: list[RawFrame]) -> ParsedVmaf:
     metric_names: list[str] = []
     metric_seen: set[str] = set()
 
-    for index, item in enumerate(frames):
-        frame_numbers.append(_frame_num(item.frame_num, index, record))
+    for item in frames:
+        frame_num = _frame_num(item.frame_num, record)
+        if frame_numbers and frame_num <= frame_numbers[-1]:
+            previous = frame_numbers[-1]
+            if frame_num == previous:
+                raise VmafParseError(
+                    f"{record.relative_path} has duplicate frameNum: {frame_num}"
+                )
+            raise VmafParseError(
+                f"{record.relative_path} has out-of-order frameNum: "
+                f"{frame_num} after {previous}"
+            )
+        frame_numbers.append(frame_num)
         for name in item.metrics:
             if name not in metric_seen:
                 metric_seen.add(name)

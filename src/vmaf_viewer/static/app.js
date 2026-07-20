@@ -500,14 +500,14 @@ async function requestExtraSeriesForMetrics(metrics, range = null, expectedCompa
   }
 
   const requestId = ++state.zoomSeriesRequestId;
-  const commonRange = state.comparison.common_range || {};
+  const frameDomain = state.comparison.frame_domain || {};
   const body = await api("/api/series", {
     method: "POST",
     body: {
       file_ids: fileIds,
       metrics: requestedMetrics,
-      start: range ? range.start : commonRange.start || 0,
-      end: range ? range.end : commonRange.end,
+      start: range ? range.start : (frameDomain.start ?? 0),
+      end: range ? range.end : (frameDomain.end ?? null),
       max_points: range ? 5000 : 2000,
     },
   });
@@ -570,9 +570,15 @@ function chartZoomRange(chart) {
     return null;
   }
 
-  const commonRange = state.comparison.common_range || {};
-  const rangeStart = Number(commonRange.start || 0);
-  const rangeEnd = Number(commonRange.end || 0);
+  const frameDomain = state.comparison.frame_domain || {};
+  if (frameDomain.start == null || frameDomain.end == null) {
+    return null;
+  }
+  const rangeStart = Number(frameDomain.start);
+  const rangeEnd = Number(frameDomain.end);
+  if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd)) {
+    return null;
+  }
   const span = Math.max(0, rangeEnd - rangeStart);
   const start = Math.max(rangeStart, Math.floor(rangeStart + (zoom.start / 100) * span));
   const end = Math.min(rangeEnd, Math.ceil(rangeStart + (zoom.end / 100) * span));
@@ -837,7 +843,7 @@ function renderSummary() {
           return `<td class="${cellClass}"><strong>${escapeHtml(count)}</strong> ${escapeHtml(ratio)}</td>`;
         })
         .join("");
-      const frames = `${row.common_frames || stats.count || 0}/${row.total_frames || 0}`;
+      const frames = `${stats.count ?? 0}/${row.total_frames ?? 0}`;
 
       return `
         <tr>
@@ -1271,7 +1277,7 @@ function renderLineCharts() {
     return;
   }
 
-  const commonRange = state.comparison.common_range || {};
+  const frameDomain = state.comparison.frame_domain || {};
   const overviewSeries = vmafOverviewSeries(rows);
 
   if (!overviewSeries.length) {
@@ -1287,8 +1293,8 @@ function renderLineCharts() {
         ],
         xAxis: {
           ...overviewOptions.xAxis,
-          min: commonRange.start || 0,
-          max: commonRange.end || undefined,
+          min: frameDomain.start ?? 0,
+          max: frameDomain.end ?? undefined,
         },
         series: overviewSeries,
       },
@@ -1328,8 +1334,8 @@ function renderLineCharts() {
     ],
     xAxis: {
       ...detailOptions.xAxis,
-      min: commonRange.start || 0,
-      max: commonRange.end || undefined,
+      min: frameDomain.start ?? 0,
+      max: frameDomain.end ?? undefined,
     },
     series: detailSeriesForMerge(detailSeries),
   });

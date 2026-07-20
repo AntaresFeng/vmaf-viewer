@@ -67,16 +67,18 @@ def test_api_compare_returns_summary_and_charts():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["common_range"]["frame_count"] == 4
+    assert body["frame_domain"] == {"start": 0, "end": 4}
+    assert "common_range" not in body
     assert [row["name"] for row in body["summary"]] == [
-        "alpha_vmaf.json",
         "beta_vmaf.json",
+        "alpha_vmaf.json",
     ]
+    assert all("common_frames" not in row for row in body["summary"])
     alpha = next(row for row in body["summary"] if row["name"] == "alpha_vmaf.json")
     beta = next(row for row in body["summary"] if row["name"] == "beta_vmaf.json")
-    assert alpha["stats"]["q1"] == 87.5
-    assert alpha["stats"]["median"] == 93.0
-    assert alpha["stats"]["q3"] == 96.25
+    assert alpha["stats"]["q1"] == 80.0
+    assert alpha["stats"]["median"] == 90.0
+    assert alpha["stats"]["q3"] == 96.0
     assert beta["stats"]["q1"] == 88.75
     assert beta["stats"]["median"] == 90.0
     assert beta["stats"]["q3"] == 91.25
@@ -125,7 +127,7 @@ def test_api_compare_supports_mixed_json_csv_and_xml_logs(tmp_path):
         "gamma_vmaf.csv",
         "delta_vmaf.xml",
     }
-    assert body["common_range"]["frame_count"] == 4
+    assert body["frame_domain"] == {"start": 0, "end": 4}
 
 
 def test_api_compare_skips_bad_json_and_keeps_valid_results(tmp_path):
@@ -229,6 +231,47 @@ def test_api_series_returns_requested_metric_range():
         [2, 2.0],
         [3, 2.5],
     ]
+
+
+def test_api_series_filters_each_file_by_native_frame_numbers(tmp_path):
+    (tmp_path / "dense_vmaf.json").write_text(
+        '{"frames":['
+        '{"frameNum":0,"metrics":{"vmaf":90}},'
+        '{"frameNum":1,"metrics":{"vmaf":91}},'
+        '{"frameNum":2,"metrics":{"vmaf":92}},'
+        '{"frameNum":3,"metrics":{"vmaf":93}}'
+        "]}",
+        encoding="utf-8",
+    )
+    (tmp_path / "subsampled_vmaf.json").write_text(
+        '{"frames":['
+        '{"frameNum":0,"metrics":{"vmaf":80}},'
+        '{"frameNum":2,"metrics":{"vmaf":82}},'
+        '{"frameNum":4,"metrics":{"vmaf":84}}'
+        "]}",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(data_dir=tmp_path))
+    files = client.get("/api/files").json()["files"]
+
+    response = client.post(
+        "/api/series",
+        json={
+            "file_ids": [item["id"] for item in files],
+            "metrics": ["vmaf"],
+            "start": 1,
+            "end": 3,
+            "max_points": 100,
+        },
+    )
+
+    assert response.status_code == 200
+    points_by_name = {
+        item["name"]: response.json()["series"][item["id"]]["vmaf"]["points"]
+        for item in files
+    }
+    assert points_by_name["dense_vmaf.json"] == [[1, 91.0], [2, 92.0], [3, 93.0]]
+    assert points_by_name["subsampled_vmaf.json"] == [[2, 82.0]]
 
 
 def test_index_returns_clear_response_when_frontend_is_missing():
