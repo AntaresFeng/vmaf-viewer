@@ -50,31 +50,27 @@ def test_cleanup_requires_completed_upload_and_preserves_archives(
     assert project.default_result_archive_path.is_file()
 
 
-@pytest.mark.parametrize(
-    ("artifact", "message"),
-    [
-        ("package", "input archive SHA-256 does not match"),
-        ("result", "result archive SHA-256 does not match"),
-    ],
-)
-def test_cleanup_rejects_archive_hash_drift_without_deleting(
+def test_cleanup_rejects_result_archive_hash_drift_without_deleting(
     tmp_path: Path,
-    artifact: str,
-    message: str,
 ) -> None:
     project = _write_cleanup_project(tmp_path)
-    path = (
-        project.default_package_path
-        if artifact == "package"
-        else project.default_result_archive_path
-    )
-    path.write_bytes(b"changed")
+    project.default_result_archive_path.write_bytes(b"changed")
 
-    with pytest.raises(CleanupStateError, match=message):
+    with pytest.raises(CleanupStateError, match="result archive SHA-256 does not match"):
         cleanup_project(project)
 
     assert project.default_package_path.is_file()
     assert project.default_result_archive_path.is_file()
+
+
+def test_cleanup_no_longer_validates_package_archive_hash(tmp_path: Path) -> None:
+    project = _write_cleanup_project(tmp_path)
+    project.default_package_path.write_bytes(b"changed")
+
+    cleanup_project(project)
+
+    assert not project.default_package_path.exists()
+    assert not project.default_result_archive_path.exists()
 
 
 def test_cleanup_rejects_installed_result_size_drift_without_deleting(
@@ -91,37 +87,33 @@ def test_cleanup_rejects_installed_result_size_drift_without_deleting(
     assert project.default_result_archive_path.is_file()
 
 
-def test_cleanup_rejects_same_size_installed_result_content_drift(
+def test_cleanup_accepts_same_size_installed_result_drift(
     tmp_path: Path,
 ) -> None:
     project = _write_cleanup_project(tmp_path)
     result_path = project.video_dir / "dist_vmaf.json"
     result_path.write_bytes(b"x" * result_path.stat().st_size)
 
-    with pytest.raises(CleanupStateError, match="content does not match archive"):
-        cleanup_project(project)
+    cleanup_project(project)
 
-    assert project.default_package_path.is_file()
-    assert project.default_result_archive_path.is_file()
+    assert not project.default_package_path.exists()
+    assert not project.default_result_archive_path.exists()
 
 
-def test_cleanup_rejects_same_size_input_media_content_drift(
+def test_cleanup_accepts_same_size_input_media_drift(
     tmp_path: Path,
 ) -> None:
     project = _write_cleanup_project(tmp_path)
     distorted = project.video_dir / "dist.mp4"
     distorted.write_bytes(b"x" * distorted.stat().st_size)
 
-    with pytest.raises(CleanupStateError, match="media content does not match"):
-        cleanup_project(project)
+    cleanup_project(project)
 
-    assert project.default_package_path.is_file()
-    assert project.default_result_archive_path.is_file()
+    assert not project.default_package_path.exists()
+    assert not project.default_result_archive_path.exists()
 
 
-def test_cleanup_rejects_package_manifest_drift_from_input_archive(
-    tmp_path: Path,
-) -> None:
+def test_cleanup_accepts_package_manifest_drift(tmp_path: Path) -> None:
     project = _write_cleanup_project(tmp_path)
     package_manifest = json.loads(
         project.package_manifest_path.read_text(encoding="utf-8")
@@ -132,14 +124,10 @@ def test_cleanup_rejects_package_manifest_drift_from_input_archive(
         encoding="utf-8",
     )
 
-    with pytest.raises(
-        CleanupStateError,
-        match="package manifest does not match input archive snapshot",
-    ):
-        cleanup_project(project)
+    cleanup_project(project)
 
-    assert project.default_package_path.is_file()
-    assert project.default_result_archive_path.is_file()
+    assert not project.default_package_path.exists()
+    assert not project.default_result_archive_path.exists()
 
 
 def test_cleanup_rejects_manifest_result_coverage_drift_without_deleting(

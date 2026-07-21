@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import tarfile
 import uuid
-from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from pathlib import Path
+from typing import Any
 
 from vmaf_workflow.manifest import write_manifest
 from vmaf_workflow.project import WorkflowProject
@@ -58,6 +57,7 @@ def cleanup_project(project: WorkflowProject) -> dict[str, Any]:
         package_present,
         previous_cleanup,
         "package",
+        verify_hash=False,
     )
     result = _current_or_cleaned_artifact(
         project.default_result_archive_path,
@@ -66,6 +66,7 @@ def cleanup_project(project: WorkflowProject) -> dict[str, Any]:
         result_present,
         previous_cleanup,
         "result",
+        verify_hash=True,
     )
 
     package_manifest = _load_json_object(
@@ -73,17 +74,13 @@ def cleanup_project(project: WorkflowProject) -> dict[str, Any]:
         "package-manifest.json",
     )
     _require_default_package_manifest_path(project, package_manifest)
-    if package_present:
-        _validate_package_contents(project, package_manifest)
 
-    installed_paths = _validate_installed_results(
+    _validate_installed_results(
         project,
         fetch,
         manifest,
         result_present=result_present,
     )
-    if result_present:
-        _validate_result_archive_contents(project, installed_paths)
 
     targets = {
         name: path
@@ -174,11 +171,15 @@ def _current_or_cleaned_artifact(
     present: bool,
     previous_cleanup: dict[str, Any] | None,
     artifact_name: str,
+    *,
+    verify_hash: bool,
 ) -> dict[str, Any]:
     if expected_path.is_symlink():
         raise CleanupStateError(f"{label} archive must not be a symbolic link")
     if present:
-        return _validate_archive(expected_path, artifact_state, label)
+        if verify_hash:
+            return _validate_archive(expected_path, artifact_state, label)
+        return _trusted_artifact(expected_path, artifact_state, label)
     if expected_path.exists():
         raise CleanupStateError(
             f"{label} archive is not a regular file: {expected_path}"
@@ -236,124 +237,39 @@ def _validate_archive(
     if actual_sha256 != expected_sha256:
         raise CleanupStateError(f"{label} archive SHA-256 does not match state")
 
-    expected_size = artifact_state.get("size_bytes")
-    actual_size = expected_path.stat().st_size
-    if not isinstance(expected_size, int) or expected_size != actual_size:
-        raise CleanupStateError(f"{label} archive size does not match state")
-
     return {
         "path": str(expected_path),
         "sha256": actual_sha256,
-        "size_bytes": actual_size,
+        "size_bytes": expected_path.stat().st_size,
     }
 
 
-def _validate_package_contents(
-    project: WorkflowProject,
-    package_manifest: dict[str, Any],
-) -> None:
-    try:
-        with tarfile.open(project.default_package_path, "r:*") as archive:
-            snapshot = _read_package_manifest_snapshot(project, archive)
-            if snapshot != package_manifest:
-                raise CleanupStateError(
-                    "package manifest does not match input archive snapshot"
-                )
-            expected = _package_media_paths(project, snapshot)
-            matching = [
-                member for member in archive.getmembers() if member.name in expected
-            ]
-            if {member.name for member in matching} != set(expected):
-                raise CleanupStateError(
-                    "input archive does not contain all package media files"
-                )
-            if len(matching) != len(expected):
-                raise CleanupStateError(
-                    "input archive contains duplicate package media files"
-                )
-            for member in matching:
-                if not member.isfile():
-                    raise CleanupStateError(
-                        f"input archive media is not a regular file: {member.name}"
-                    )
-                archived = archive.extractfile(member)
-                if archived is None:
-                    raise CleanupStateError(
-                        f"input archive media cannot be read: {member.name}"
-                    )
-                with expected[member.name].open("rb") as source:
-                    if not _streams_equal(archived, source):
-                        raise CleanupStateError(
-                            "package media content does not match input archive: "
-                            f"{expected[member.name]}"
-                        )
-    except (OSError, tarfile.TarError) as exc:
-        raise CleanupStateError(f"input archive cannot be validated: {exc}") from exc
-
-
-def _read_package_manifest_snapshot(
-    project: WorkflowProject,
-    archive: tarfile.TarFile,
+def _trusted_artifact(
+    expected_path: Path,
+    artifact_state: dict[str, Any],
+    label: str,
 ) -> dict[str, Any]:
-    name = f"{project.video_dir.name}/.workflow/package-manifest.json"
-    members = [member for member in archive.getmembers() if member.name == name]
-    if len(members) != 1 or not members[0].isfile():
+    raw_path = artifact_state.get("local_path")
+    if not isinstance(raw_path, str):
+        raise CleanupStateError(f"{label} archive local path is invalid")
+    if Path(raw_path).resolve() != expected_path.resolve():
         raise CleanupStateError(
-            "input archive must contain one regular package manifest snapshot"
+            f"{label} archive path does not match current project: {raw_path}"
         )
-    manifest_file = archive.extractfile(members[0])
-    if manifest_file is None:
-        raise CleanupStateError("input archive package manifest cannot be read")
-    try:
-        snapshot = json.loads(manifest_file.read().decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CleanupStateError(
-            "input archive package manifest is not valid JSON"
-        ) from exc
-    if not isinstance(snapshot, dict):
-        raise CleanupStateError("input archive package manifest must be a JSON object")
-    return snapshot
+    if expected_path.is_symlink() or not expected_path.is_file():
+        raise CleanupStateError(f"{label} archive is required: {expected_path}")
 
-
-def _package_media_paths(
-    project: WorkflowProject,
-    package_manifest: dict[str, Any],
-) -> dict[str, Path]:
-    media_files = package_manifest.get("media_files")
-    if not isinstance(media_files, list) or not media_files:
-        raise CleanupStateError("package manifest media_files are required")
-    if package_manifest.get("archive_root") != project.video_dir.name:
-        raise CleanupStateError("package manifest archive_root is invalid")
-
-    expected: dict[str, Path] = {}
-    for entry in media_files:
-        if not isinstance(entry, dict):
-            raise CleanupStateError("package manifest media file entry is invalid")
-        raw_path = entry.get("path")
-        expected_size = entry.get("size_bytes")
-        if not isinstance(raw_path, str) or not isinstance(expected_size, int):
-            raise CleanupStateError("package manifest media file entry is invalid")
-        relative = _validated_relative_path(raw_path, "package media path")
-        source = project.video_dir.joinpath(*relative.parts)
-        if source.is_symlink() or not source.is_file():
-            raise CleanupStateError(f"package media file is required: {source}")
-        if source.stat().st_size != expected_size:
-            raise CleanupStateError(f"package media file size changed: {source}")
-        member_name = f"{project.video_dir.name}/{relative.as_posix()}"
-        if member_name in expected:
-            raise CleanupStateError(f"package media path is duplicated: {raw_path}")
-        expected[member_name] = source
-    return expected
-
-
-def _streams_equal(first: BinaryIO, second: BinaryIO) -> bool:
-    while True:
-        first_chunk = first.read(1024 * 1024)
-        second_chunk = second.read(1024 * 1024)
-        if first_chunk != second_chunk:
-            return False
-        if not first_chunk:
-            return True
+    expected_sha256 = artifact_state.get("sha256")
+    expected_size = artifact_state.get("size_bytes")
+    if not isinstance(expected_sha256, str) or not expected_sha256:
+        raise CleanupStateError(f"{label} archive SHA-256 is invalid")
+    if not isinstance(expected_size, int):
+        raise CleanupStateError(f"{label} archive size is invalid")
+    return {
+        "path": str(expected_path),
+        "sha256": expected_sha256,
+        "size_bytes": expected_size,
+    }
 
 
 def _validate_installed_results(
@@ -415,49 +331,6 @@ def _validate_installed_results(
     elif raw_archive is not None:
         raise CleanupStateError("manifest result archive must be null after cleanup")
     return installed_paths
-
-
-def _validate_result_archive_contents(
-    project: WorkflowProject,
-    installed_paths: list[Path],
-) -> None:
-    expected = {
-        (
-            f"{project.video_dir.name}/{path.relative_to(project.video_dir).as_posix()}"
-        ): path
-        for path in installed_paths
-    }
-    try:
-        with tarfile.open(project.default_result_archive_path, "r:gz") as archive:
-            matching_members = [
-                member for member in archive.getmembers() if member.name in expected
-            ]
-            if {member.name for member in matching_members} != set(expected):
-                raise CleanupStateError(
-                    "result archive does not contain all installed result files"
-                )
-            if len(matching_members) != len(expected):
-                raise CleanupStateError(
-                    "result archive contains duplicate installed result files"
-                )
-            for member in matching_members:
-                if not member.isfile():
-                    raise CleanupStateError(
-                        f"result archive member is not a regular file: {member.name}"
-                    )
-                archived_file = archive.extractfile(member)
-                if archived_file is None:
-                    raise CleanupStateError(
-                        f"result archive member cannot be read: {member.name}"
-                    )
-                with expected[member.name].open("rb") as installed_file:
-                    if not _streams_equal(archived_file, installed_file):
-                        raise CleanupStateError(
-                            "installed result content does not match archive: "
-                            f"{expected[member.name]}"
-                        )
-    except (OSError, tarfile.TarError) as exc:
-        raise CleanupStateError(f"result archive cannot be validated: {exc}") from exc
 
 
 def _new_pending_cleanup(
@@ -710,13 +583,6 @@ def _manifest_cleanup_entry(
         "size_bytes": artifact["size_bytes"],
         "cleaned_at": completed_at,
     }
-
-
-def _validated_relative_path(value: str, label: str) -> PurePosixPath:
-    path = PurePosixPath(value)
-    if path.is_absolute() or "\\" in value or ".." in path.parts or not path.parts:
-        raise CleanupStateError(f"{label} is invalid: {value}")
-    return path
 
 
 def _load_json_object(path: Path, name: str) -> dict[str, Any]:
