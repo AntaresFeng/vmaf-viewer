@@ -52,6 +52,22 @@ def test_api_data_dir_rejects_invalid_directory_without_changing_current(tmp_pat
     assert client.get("/api/files").json()["data_dir"] == original
 
 
+def test_api_files_prunes_cached_file_removed_from_scan(tmp_path):
+    fixture = Path("tests/fixtures/alpha_vmaf.json")
+    cached_path = tmp_path / "cached.json"
+    cached_path.write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+    app = create_app(data_dir=tmp_path)
+    client = TestClient(app)
+    file_id = client.get("/api/files").json()["files"][0]["id"]
+
+    assert client.get(f"/api/file/{file_id}/metrics").status_code == 200
+    assert app.state.vmaf_viewer.cache.entry_count == 1
+
+    cached_path.unlink()
+    assert client.get("/api/files").json()["files"] == []
+    assert app.state.vmaf_viewer.cache.entry_count == 0
+
+
 def test_api_compare_returns_summary_and_charts():
     client = TestClient(create_app(data_dir=Path("tests/fixtures")))
     files = client.get("/api/files").json()["files"]

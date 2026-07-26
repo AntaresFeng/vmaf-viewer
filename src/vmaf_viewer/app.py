@@ -12,7 +12,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .cache import VmafCache
+from .cache import (
+    DEFAULT_CACHE_MAX_BYTES,
+    DEFAULT_CACHE_MIN_ENTRIES,
+    MIB,
+    VmafCache,
+)
 from .compare import compare_files
 from .models import FileRecord, ParsedVmaf
 from .parser import VmafParseError
@@ -42,9 +47,18 @@ class DataDirRequest(BaseModel):
 
 
 class AppState:
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        *,
+        cache_max_bytes: int = DEFAULT_CACHE_MAX_BYTES,
+        cache_min_entries: int = DEFAULT_CACHE_MIN_ENTRIES,
+    ) -> None:
         self.data_dir = data_dir.resolve()
-        self.cache = VmafCache()
+        self.cache = VmafCache(
+            max_bytes=cache_max_bytes,
+            min_entries=cache_min_entries,
+        )
 
     def set_data_dir(self, data_dir: Path) -> None:
         resolved = data_dir.expanduser().resolve()
@@ -54,7 +68,9 @@ class AppState:
         self.cache.clear()
 
     def records(self) -> list[FileRecord]:
-        return scan_vmaf_files(self.data_dir)
+        records = scan_vmaf_files(self.data_dir)
+        self.cache.prune({record.id for record in records})
+        return records
 
     def selected_records(self, file_ids: list[str]) -> list[FileRecord]:
         by_id = {record.id: record for record in self.records()}
@@ -135,8 +151,51 @@ def _files_response(state: AppState) -> dict:
     }
 
 
-def create_app(data_dir: Path | None = None) -> FastAPI:
-    state = AppState(data_dir or _default_data_dir())
+def _environment_integer(
+    name: str,
+    *,
+    default: int,
+    minimum: int,
+    environ: Mapping[str, str] = os.environ,
+) -> int:
+    raw = environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if value < minimum:
+        qualifier = "positive" if minimum == 1 else "non-negative"
+        raise ValueError(f"{name} must be a {qualifier} integer")
+    return value
+
+
+def create_app(
+    data_dir: Path | None = None,
+    *,
+    cache_max_bytes: int | None = None,
+    cache_min_entries: int | None = None,
+) -> FastAPI:
+    if cache_max_bytes is None:
+        cache_max_mib = _environment_integer(
+            "VMAF_VIEWER_CACHE_MAX_MIB",
+            default=DEFAULT_CACHE_MAX_BYTES // MIB,
+            minimum=1,
+        )
+        cache_max_bytes = cache_max_mib * MIB
+    if cache_min_entries is None:
+        cache_min_entries = _environment_integer(
+            "VMAF_VIEWER_CACHE_MIN_ENTRIES",
+            default=DEFAULT_CACHE_MIN_ENTRIES,
+            minimum=0,
+        )
+
+    state = AppState(
+        data_dir or _default_data_dir(),
+        cache_max_bytes=cache_max_bytes,
+        cache_min_entries=cache_min_entries,
+    )
     app = FastAPI(title="VMAF Log Viewer")
     app.state.vmaf_viewer = state
 

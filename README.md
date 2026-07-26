@@ -93,6 +93,24 @@ Startup scan-directory priority is:
 
 You can also change the scan directory from the top `Dir` field in the web UI and press `Scan`.
 
+### Cache settings
+
+The backend keeps parsed logs in a memory-budgeted LRU cache. It targets a
+256 MiB soft limit while retaining at least the six most recently used logs, so
+the cache may exceed the byte limit when those six logs are larger. Configure
+the behavior with environment variables before starting the viewer:
+
+```powershell
+$env:VMAF_VIEWER_CACHE_MAX_MIB = "256"
+$env:VMAF_VIEWER_CACHE_MIN_ENTRIES = "6"
+uv run vmaf-viewer
+```
+
+`VMAF_VIEWER_CACHE_MAX_MIB` must be a positive integer and
+`VMAF_VIEWER_CACHE_MIN_ENTRIES` must be a non-negative integer. Evicted Python
+objects are released when no request still references them, although the
+process RSS shown by the operating system may not decrease immediately.
+
 ## Tests
 
 Run the backend test suite:

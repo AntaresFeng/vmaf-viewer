@@ -59,6 +59,7 @@ Check `pyproject.toml` for details. Available local tools:
 - Backend cache/data model helpers: `cache.py`, `models.py`.
 - Frontend: `src/vmaf_viewer/static/index.html`, `app.js`, `message_state.js`, `metric_metadata.js`, `styles.css`, plus vendored `vendor/echarts.min.js`.
 - API surface includes `/api/files`, `/api/data-dir`, `/api/compare`, `/api/file/{file_id}/metrics`, and `/api/series`.
+- Parsed-log caching defaults to a 256 MiB soft budget and six minimum retained entries; configure it with `VMAF_VIEWER_CACHE_MAX_MIB` and `VMAF_VIEWER_CACHE_MIN_ENTRIES`.
 - Large JSON files and 4-6 way comparisons are expected; preserve downsampling, cache parsed files through `VmafCache`, and avoid loading unnecessary per-frame/detail series in the initial comparison path.
 - Static frontend tests live in `tests/static/` and use `browser_harness.mjs`; keep script loading order aligned with `index.html`.
 - For frontend changes, run `node --check` on changed static JS files, `node --test tests/static/*.test.mjs`, and `uv run pytest -q`.
