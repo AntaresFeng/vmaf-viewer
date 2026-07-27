@@ -41,9 +41,9 @@ manifest：
 
 ```powershell
 uv run python devscripts/explore_watermark_detection.py `
-  --distorted "videos\video6\BV1jm756EEzH-1080P 高帧率-AVC.mp4" `
-  --reference "videos\video6\brain rot.mp4" `
-  --output-dir "C:\tmp\vmaf-watermark-research\video6"
+  -D "videos\video6\BV1jm756EEzH-1080P 高帧率-AVC.mp4" `
+  -R "videos\video6\brain rot.mp4" `
+  -O "C:\tmp\vmaf-watermark-research\video6"
 ```
 
 主要输出：
