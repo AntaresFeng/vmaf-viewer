@@ -25,19 +25,29 @@ FALLBACK_1080_LABEL = "1080P 高清"
 # yt-dlp CLI format selector. `is_target_format` below must mirror this filter
 # when post-processing yt-dlp JSON output, so the two are kept together.
 YTDLP_MIN_HEIGHT = 1000
-YTDLP_FORMAT_SELECTOR = f"all[height>={YTDLP_MIN_HEIGHT}][vcodec!=none][acodec=none]"
+# yt-dlp `[protocol^=http]` keeps https/http direct links (plus http_dash_segments
+# when present) and excludes m3u8/m3u8_native HLS streams. `is_target_format`
+# mirrors it below.
+YTDLP_PROTOCOL_PREFIX = "http"
+YTDLP_FORMAT_SELECTOR = (
+    f"all[height>={YTDLP_MIN_HEIGHT}][vcodec!=none][acodec=none]"
+    f"[protocol^={YTDLP_PROTOCOL_PREFIX}]"
+)
 
 
 def is_target_format(format_info: dict[str, Any]) -> bool:
     """Mirror the YTDLP_FORMAT_SELECTOR for parsed JSON format dicts."""
     height = _coerce_int(format_info.get("height"))
     vcodec = format_info.get("vcodec")
+    protocol = format_info.get("protocol")
     return (
         height is not None
         and height >= YTDLP_MIN_HEIGHT
         and vcodec is not None
         and vcodec != "none"
         and format_info.get("acodec") == "none"
+        and isinstance(protocol, str)
+        and protocol.startswith(YTDLP_PROTOCOL_PREFIX)
     )
 
 

@@ -7,7 +7,9 @@ from vmaf_workflow.config import (
     QUALITY_LABELS,
     YTDLP_FORMAT_SELECTOR,
     YTDLP_MIN_HEIGHT,
+    YTDLP_PROTOCOL_PREFIX,
     default_settings,
+    is_target_format,
 )
 from vmaf_workflow.models import DownloadDecision, StreamRecord
 
@@ -34,7 +36,7 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
         == "<bvid>-P<pageNumberWithZero>-<pageTitle>-<dfn>-<videoCodecs>"
     )
     assert settings.ytdlp.format_selector == (
-        "all[height>=1000][vcodec!=none][acodec=none]"
+        "all[height>=1000][vcodec!=none][acodec=none][protocol^=http]"
     )
     assert settings.ytdlp.output_template == (
         "%(id)s-%(format_note)s-%(vcodec)s.%(ext)s"
@@ -53,7 +55,32 @@ def test_default_settings_uses_local_tool_paths_and_output_patterns():
     assert settings.remote.connect_timeout_seconds == 10
     assert settings.remote.server_alive_interval_seconds == 30
     assert YTDLP_MIN_HEIGHT == 1000
-    assert YTDLP_FORMAT_SELECTOR == "all[height>=1000][vcodec!=none][acodec=none]"
+    assert YTDLP_PROTOCOL_PREFIX == "http"
+    assert YTDLP_FORMAT_SELECTOR == (
+        "all[height>=1000][vcodec!=none][acodec=none][protocol^=http]"
+    )
+
+
+def test_is_target_format_mirrors_selector_including_protocol():
+    target = {
+        "height": 1080,
+        "vcodec": "avc1.640028",
+        "acodec": "none",
+    }
+
+    assert is_target_format({**target, "protocol": "https"})
+    assert is_target_format({**target, "protocol": "http"})
+    # `[protocol^=http]` also matches DASH segments whose protocol starts with http
+    assert is_target_format({**target, "protocol": "http_dash_segments"})
+    # m3u8/HLS streams do not start with http and must be excluded
+    assert not is_target_format({**target, "protocol": "m3u8"})
+    assert not is_target_format({**target, "protocol": "m3u8_native"})
+    assert not is_target_format({**target, "protocol": "rtmp"})
+    assert not is_target_format({**target, "protocol": None})
+    assert not is_target_format({**target, "protocol": "https", "height": 720})
+    assert not is_target_format(
+        {**target, "protocol": "https", "acodec": "mp4a"}
+    )
 
 
 def test_easyvmaf_settings_infers_remote_executable_from_repo_shape():

@@ -81,18 +81,20 @@ def test_normalize_ytdlp_format_builds_resolution_and_uses_tbr_fallback() -> Non
     assert stream.size_bytes == 2222
 
 
-def test_parse_ytdlp_preflight_uses_1000_minimum_height_for_video_only() -> None:
+def test_parse_ytdlp_preflight_filters_by_height_codec_and_protocol() -> None:
     raw_info = {
         "formats": [
-            {"format_id": "18", "height": 720, "vcodec": "avc1", "acodec": "mp4a"},
-            {"format_id": "999", "height": 999, "vcodec": "avc1", "acodec": "none"},
-            {"format_id": "1000", "height": 1000, "vcodec": "avc1", "acodec": "none"},
-            {"format_id": "399", "height": 1080, "vcodec": "none", "acodec": "none"},
-            {"format_id": "401", "height": 2160, "vcodec": "av01", "acodec": "none"},
+            {"format_id": "18", "height": 720, "vcodec": "avc1", "acodec": "mp4a", "protocol": "https"},
+            {"format_id": "999", "height": 999, "vcodec": "avc1", "acodec": "none", "protocol": "https"},
+            {"format_id": "1000", "height": 1000, "vcodec": "avc1", "acodec": "none", "protocol": "https"},
+            {"format_id": "399", "height": 1080, "vcodec": "none", "acodec": "none", "protocol": "https"},
+            {"format_id": "401", "height": 2160, "vcodec": "av01", "acodec": "none", "protocol": "https"},
+            # video-only 1080p over HLS: same shape as 1000 but m3u8 must be excluded
+            {"format_id": "271", "height": 1080, "vcodec": "avc1", "acodec": "none", "protocol": "m3u8_native"},
         ],
         "requested_downloads": [
-            {"format_id": "251", "height": None, "vcodec": "none", "acodec": "opus"},
-            {"format_id": "401", "height": 2160, "vcodec": "av01", "acodec": "none"},
+            {"format_id": "251", "height": None, "vcodec": "none", "acodec": "opus", "protocol": "https"},
+            {"format_id": "401", "height": 2160, "vcodec": "av01", "acodec": "none", "protocol": "https"},
         ],
     }
 
@@ -114,13 +116,20 @@ def test_load_after_video_downloads_reads_jsonl_requested_downloads(tmp_path) ->
                     "height": 1080,
                     "vcodec": "avc1",
                     "acodec": "none",
+                    "protocol": "https",
                 },
                 {"format_id": "140", "vcodec": "none", "acodec": "mp4a"},
             ]
         },
         {
             "requested_downloads": [
-                {"format_id": "399", "height": 1080, "vcodec": "av01", "acodec": "none"}
+                {
+                    "format_id": "399",
+                    "height": 1080,
+                    "vcodec": "av01",
+                    "acodec": "none",
+                    "protocol": "https",
+                }
             ]
         },
     ]
@@ -140,10 +149,10 @@ def test_load_after_video_downloads_skips_malformed_jsonl_lines(tmp_path) -> Non
         "\n".join(
             [
                 '{"requested_downloads":[{"format_id":"137","height":1080,'
-                '"vcodec":"avc1","acodec":"none"}]}',
+                '"vcodec":"avc1","acodec":"none","protocol":"https"}]}',
                 '{"requested_downloads":',
                 '{"requested_downloads":[{"format_id":"399","height":1080,'
-                '"vcodec":"av01","acodec":"none"}]}',
+                '"vcodec":"av01","acodec":"none","protocol":"https"}]}',
             ]
         ),
         encoding="utf-8",
@@ -164,12 +173,14 @@ def test_load_sidecar_downloads_reads_infojson_target_formats(tmp_path) -> None:
                 "height": 2160,
                 "vcodec": "av01",
                 "acodec": "none",
+                "protocol": "https",
                 "requested_downloads": [
                     {
                         "format_id": "137",
                         "height": 1080,
                         "vcodec": "avc1",
                         "acodec": "none",
+                        "protocol": "https",
                     },
                     {"format_id": "140", "vcodec": "none", "acodec": "mp4a"},
                 ],
@@ -195,7 +206,13 @@ def test_load_sidecar_downloads_skips_malformed_infojson_files(tmp_path) -> None
     (tmp_path / "broken.info.json").write_text("{", encoding="utf-8")
     (tmp_path / "valid.info.json").write_text(
         json.dumps(
-            {"format_id": "401", "height": 2160, "vcodec": "av01", "acodec": "none"}
+            {
+                "format_id": "401",
+                "height": 2160,
+                "vcodec": "av01",
+                "acodec": "none",
+                "protocol": "https",
+            }
         ),
         encoding="utf-8",
     )
