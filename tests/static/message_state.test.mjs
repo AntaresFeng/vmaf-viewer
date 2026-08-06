@@ -19,9 +19,9 @@ test("picks the highest priority message", () => {
   assertMessage(
     helpers.pickMessageState({
       error: "Unable to compare selected files.",
-      warnings: ["Common frame range was shortened."],
+      warnings: ["One file could not be parsed."],
       status: "Loading comparison data...",
-      success: "Loaded 2 files, 4 common frames.",
+      success: "Loaded 2 files.",
     }),
     "Unable to compare selected files.",
     "error",
@@ -29,18 +29,18 @@ test("picks the highest priority message", () => {
 
   assertMessage(
     helpers.pickMessageState({
-      warnings: ["Common frame range was shortened.", "Ignored another warning."],
+      warnings: ["One file could not be parsed.", "Ignored another warning."],
       status: "Loading comparison data...",
-      success: "Loaded 2 files, 4 common frames.",
+      success: "Loaded 2 files.",
     }),
-    "Common frame range was shortened.",
+    "One file could not be parsed.",
     "warning",
   );
 
   assertMessage(
     helpers.pickMessageState({
       status: "Loading comparison data...",
-      success: "Loaded 2 files, 4 common frames.",
+      success: "Loaded 2 files.",
     }),
     "Loading comparison data...",
     "status",
@@ -48,9 +48,9 @@ test("picks the highest priority message", () => {
 
   assertMessage(
     helpers.pickMessageState({
-      success: "Loaded 2 files, 4 common frames.",
+      success: "Loaded 2 files.",
     }),
-    "Loaded 2 files, 4 common frames.",
+    "Loaded 2 files.",
     "status",
   );
 });
@@ -80,11 +80,7 @@ test("ignores caller-provided constructors", () => {
 test("formats loaded comparison summaries in English", () => {
   const helpers = loadMessageState();
 
-  assert.equal(
-    helpers.formatLoadedMessage([{ common_frames: 4 }, { common_frames: 4 }]),
-    "Loaded 2 files, 4 common frames.",
-  );
-  assert.equal(helpers.formatLoadedMessage([{ common_frames: 1 }]), "Loaded 1 file, 1 common frame.");
-  assert.equal(helpers.formatLoadedMessage([]), "Loaded 0 files, 0 common frames.");
-  assert.equal(helpers.formatLoadedMessage([{ common_frames: null }]), "Loaded 1 file, 0 common frames.");
+  assert.equal(helpers.formatLoadedMessage([{}, {}]), "Loaded 2 files.");
+  assert.equal(helpers.formatLoadedMessage([{}]), "Loaded 1 file.");
+  assert.equal(helpers.formatLoadedMessage([]), "Loaded 0 files.");
 });

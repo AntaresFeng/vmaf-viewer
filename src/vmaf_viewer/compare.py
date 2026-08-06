@@ -69,47 +69,13 @@ def compare_files(
     if not parsed_items:
         return {
             "files": [],
-            "common_range": {"start": 0, "end": -1, "frame_count": 0},
+            "frame_domain": {"start": None, "end": None},
             "summary": [],
             "series": {},
             "histogram": {},
             "cdf": {},
             "warnings": warnings,
         }
-
-    while parsed_items:
-        common_count = min(parsed.total_frames for parsed, _metric_name in parsed_items)
-        common_finite_items: list[tuple[ParsedVmaf, str]] = []
-        for parsed, metric_name in parsed_items:
-            values = parsed.metrics[metric_name][:common_count]
-            if finite_values(values):
-                common_finite_items.append((parsed, metric_name))
-            else:
-                warnings.append(
-                    f"{parsed.file.name} has no finite values for metric {metric_name} "
-                    f"within the first {common_count} common frames."
-                )
-        if len(common_finite_items) == len(parsed_items):
-            break
-        parsed_items = common_finite_items
-
-    if not parsed_items:
-        return {
-            "files": [],
-            "common_range": {"start": 0, "end": -1, "frame_count": 0},
-            "summary": [],
-            "series": {},
-            "histogram": {},
-            "cdf": {},
-            "warnings": warnings,
-        }
-
-    common_count = min(parsed.total_frames for parsed, _metric_name in parsed_items)
-    total_counts = {parsed.total_frames for parsed, _metric_name in parsed_items}
-    if len(total_counts) > 1:
-        warnings.append(
-            f"Frame counts differ; using first {common_count} common frames."
-        )
 
     summary_rows: list[dict] = []
     series: dict[str, dict] = {}
@@ -118,8 +84,8 @@ def compare_files(
     files: list[dict] = []
 
     for parsed, metric_name in parsed_items:
-        values = parsed.metrics[metric_name][:common_count]
-        frames = parsed.frame_numbers[:common_count]
+        values = parsed.metrics[metric_name]
+        frames = parsed.frame_numbers
         stats = summarize_values(values, validated_thresholds)
         api_file = parsed.file.to_api()
         api_file["total_frames"] = parsed.total_frames
@@ -132,7 +98,6 @@ def compare_files(
                 "relative_path": parsed.file.relative_path,
                 "metric": metric_name,
                 "total_frames": parsed.total_frames,
-                "common_frames": common_count,
                 "stats": stats,
             }
         )
@@ -144,14 +109,12 @@ def compare_files(
         cdf[parsed.file.id] = build_cdf(values, bucket_size=1.0)
 
     summary_rows.sort(key=lambda row: row["stats"]["mean"], reverse=True)
+    frame_start = min(parsed.frame_numbers[0] for parsed, _ in parsed_items)
+    frame_end = max(parsed.frame_numbers[-1] for parsed, _ in parsed_items)
 
     return {
         "files": files,
-        "common_range": {
-            "start": 0,
-            "end": common_count - 1,
-            "frame_count": common_count,
-        },
+        "frame_domain": {"start": frame_start, "end": frame_end},
         "summary": summary_rows,
         "series": series,
         "histogram": histogram,

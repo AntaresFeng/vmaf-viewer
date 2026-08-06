@@ -15,21 +15,11 @@
     return "";
   }
 
-  function commonFrameCount(summary) {
-    if (!Array.isArray(summary) || !summary.length) {
-      return 0;
-    }
-    const value = Number(summary[0].common_frames);
-    return Number.isFinite(value) ? value : 0;
-  }
-
   function formatLoadedMessage(summary) {
     const rows = Array.isArray(summary) ? summary : [];
     const fileCount = rows.length;
-    const frameCount = commonFrameCount(rows);
     const fileWord = fileCount === 1 ? "file" : "files";
-    const frameWord = frameCount === 1 ? "common frame" : "common frames";
-    return `Loaded ${fileCount} ${fileWord}, ${frameCount} ${frameWord}.`;
+    return `Loaded ${fileCount} ${fileWord}.`;
   }
 
   function pickMessageState(input = {}) {

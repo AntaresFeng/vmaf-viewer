@@ -28,18 +28,20 @@ def _write_vmaf(path: Path, frames: list[dict]) -> None:
     )
 
 
-def test_compare_files_uses_shortest_common_range_and_mean_ranking():
+def test_compare_files_uses_each_files_full_samples_and_union_frame_domain():
     cache = VmafCache()
     result = compare_files(_records(), cache, thresholds=[95.0, 90.0, 80.0, 60.0])
 
-    assert result["common_range"] == {"start": 0, "end": 3, "frame_count": 4}
+    assert result["frame_domain"] == {"start": 0, "end": 4}
     assert [row["name"] for row in result["summary"]] == [
-        "alpha_vmaf.json",
         "beta_vmaf.json",
+        "alpha_vmaf.json",
     ]
-    assert result["summary"][0]["stats"]["mean"] == 90.75
-    assert result["summary"][1]["stats"]["mean"] == 90.0
-    assert result["warnings"] == ["Frame counts differ; using first 4 common frames."]
+    assert result["summary"][0]["stats"]["mean"] == 90.0
+    assert result["summary"][0]["stats"]["count"] == 4
+    assert result["summary"][1]["stats"]["mean"] == 86.6
+    assert result["summary"][1]["stats"]["count"] == 5
+    assert result["warnings"] == []
 
 
 def test_compare_files_returns_histogram_cdf_and_line_series():
@@ -119,10 +121,11 @@ def test_compare_files_skips_metric_with_no_finite_values(tmp_path):
     assert result["series"] == {}
     assert result["histogram"] == {}
     assert result["cdf"] == {}
+    assert result["frame_domain"] == {"start": None, "end": None}
     assert result["warnings"] == ["nan_vmaf.json has no finite values for metric vmaf."]
 
 
-def test_compare_files_common_window_warning_mentions_common_frame_count(tmp_path):
+def test_compare_files_keeps_late_finite_values_beyond_shorter_file(tmp_path):
     _write_vmaf(
         tmp_path / "short_vmaf.json",
         [
@@ -141,10 +144,45 @@ def test_compare_files_common_window_warning_mentions_common_frame_count(tmp_pat
 
     result = compare_files(scan_vmaf_files(tmp_path), VmafCache(), thresholds=[90.0])
 
-    assert [row["name"] for row in result["summary"]] == ["short_vmaf.json"]
-    assert result["warnings"] == [
-        "late_finite_vmaf.json has no finite values for metric vmaf within the first 2 common frames."
+    assert [row["name"] for row in result["summary"]] == [
+        "short_vmaf.json",
+        "late_finite_vmaf.json",
     ]
+    assert result["frame_domain"] == {"start": 0, "end": 2}
+    assert result["summary"][1]["stats"]["count"] == 1
+    assert result["summary"][1]["stats"]["mean"] == 88.0
+    assert result["warnings"] == []
+
+
+def test_compare_files_preserves_dense_and_subsampled_frame_numbers(tmp_path):
+    _write_vmaf(
+        tmp_path / "dense_vmaf.json",
+        [
+            {"frameNum": frame, "metrics": {"vmaf": 90.0 + frame}}
+            for frame in range(6)
+        ],
+    )
+    _write_vmaf(
+        tmp_path / "subsampled_vmaf.json",
+        [
+            {"frameNum": frame, "metrics": {"vmaf": 80.0 + frame}}
+            for frame in [0, 2, 4]
+        ],
+    )
+    records = scan_vmaf_files(tmp_path)
+
+    result = compare_files(records, VmafCache(), thresholds=[90.0], max_points=100)
+
+    rows = {row["name"]: row for row in result["summary"]}
+    series = {
+        record.name: result["series"][record.id]["points"] for record in records
+    }
+    assert result["frame_domain"] == {"start": 0, "end": 5}
+    assert rows["dense_vmaf.json"]["stats"]["count"] == 6
+    assert rows["subsampled_vmaf.json"]["stats"]["count"] == 3
+    assert [point[0] for point in series["dense_vmaf.json"]] == [0, 1, 2, 3, 4, 5]
+    assert [point[0] for point in series["subsampled_vmaf.json"]] == [0, 2, 4]
+    assert result["warnings"] == []
 
 
 def test_vmaf_cache_reuses_parse_until_size_or_mtime_changes(tmp_path):
