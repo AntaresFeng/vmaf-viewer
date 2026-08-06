@@ -120,6 +120,26 @@ def test_replacing_stale_entry_updates_estimated_bytes(monkeypatch) -> None:
     assert cache.estimated_bytes == 388
 
 
+def test_changed_mtime_reparses_same_sized_record(monkeypatch) -> None:
+    calls: list[float] = []
+
+    def fake_parse(record: FileRecord) -> ParsedVmaf:
+        calls.append(record.mtime)
+        return _parsed(record)
+
+    monkeypatch.setattr(cache_module, "parse_vmaf_file", fake_parse)
+    cache = VmafCache()
+    original = _record("same", size=10, mtime=1.0)
+    changed = replace(original, mtime=2.0)
+
+    first = cache.get(original)
+    second = cache.get(changed)
+
+    assert second is not first
+    assert cache.get(changed) is second
+    assert calls == [1.0, 2.0]
+
+
 def test_soft_budget_keeps_six_most_recent_entries(monkeypatch) -> None:
     calls: Counter[str] = Counter()
 

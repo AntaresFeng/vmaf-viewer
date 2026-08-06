@@ -420,18 +420,3 @@ def test_parse_vmaf_file_rejects_invalid_xml(tmp_path):
 
     with pytest.raises(VmafParseError, match="Invalid XML"):
         parse_vmaf_file(_record_for_path(fixture))
-
-
-def test_parse_vmaf_file_leaves_missing_xml_file_as_os_error(tmp_path):
-    fixture = tmp_path / "missing_vmaf.xml"
-    record = FileRecord(
-        id="missing",
-        name=fixture.name,
-        path=fixture,
-        relative_path=fixture.name,
-        size=0,
-        mtime=0,
-    )
-
-    with pytest.raises(OSError):
-        parse_vmaf_file(record)

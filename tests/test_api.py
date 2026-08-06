@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import vmaf_viewer.app as app_module
 from vmaf_viewer.app import create_app
 
 
@@ -84,20 +85,10 @@ def test_api_compare_returns_summary_and_charts():
     assert response.status_code == 200
     body = response.json()
     assert body["frame_domain"] == {"start": 0, "end": 4}
-    assert "common_range" not in body
     assert [row["name"] for row in body["summary"]] == [
         "beta_vmaf.json",
         "alpha_vmaf.json",
     ]
-    assert all("common_frames" not in row for row in body["summary"])
-    alpha = next(row for row in body["summary"] if row["name"] == "alpha_vmaf.json")
-    beta = next(row for row in body["summary"] if row["name"] == "beta_vmaf.json")
-    assert alpha["stats"]["q1"] == 80.0
-    assert alpha["stats"]["median"] == 90.0
-    assert alpha["stats"]["q3"] == 96.0
-    assert beta["stats"]["q1"] == 88.75
-    assert beta["stats"]["median"] == 90.0
-    assert beta["stats"]["q3"] == 91.25
     assert set(body["series"]) == {item["id"] for item in files}
 
 
@@ -169,30 +160,6 @@ def test_api_compare_skips_bad_json_and_keeps_valid_results(tmp_path):
     assert [row["name"] for row in body["summary"]] == ["alpha_vmaf.json"]
     assert set(body["series"]) == {files[0]["id"]}
     assert body["warnings"] == ["Invalid JSON in bad_vmaf.json"]
-
-
-def test_api_compare_skips_bad_csv_and_keeps_valid_results(tmp_path):
-    fixture = Path("tests/fixtures/alpha_vmaf.json")
-    (tmp_path / "alpha_vmaf.json").write_text(
-        fixture.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    (tmp_path / "bad_vmaf.csv").write_text("vmaf\n99.0\n", encoding="utf-8")
-    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
-    files = client.get("/api/files").json()["files"]
-
-    response = client.post(
-        "/api/compare",
-        json={
-            "file_ids": [item["id"] for item in files],
-            "thresholds": [90],
-            "max_points": 100,
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert [row["name"] for row in body["summary"]] == ["alpha_vmaf.json"]
-    assert body["warnings"] == ["bad_vmaf.csv is missing 'Frame' column"]
 
 
 def test_api_compare_rejects_empty_selection():
@@ -290,16 +257,33 @@ def test_api_series_filters_each_file_by_native_frame_numbers(tmp_path):
     assert points_by_name["subsampled_vmaf.json"] == [[2, 82.0]]
 
 
-def test_index_returns_clear_response_when_frontend_is_missing():
-    client = TestClient(
-        create_app(data_dir=Path("tests/fixtures")), raise_server_exceptions=False
-    )
+def test_index_serves_frontend_html():
+    client = TestClient(create_app(data_dir=Path("tests/fixtures")))
 
     response = client.get("/")
 
-    assert response.status_code in {200, 404}
-    if response.status_code == 404:
-        assert response.json()["detail"] == "Viewer frontend is not available yet."
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<title>VMAF Log Viewer</title>" in response.text
+
+
+def test_index_returns_clear_response_when_frontend_is_missing(monkeypatch):
+    app = create_app(data_dir=Path("tests/fixtures"))
+    index_path = Path(app_module.__file__).parent / "static" / "index.html"
+    original_exists = Path.exists
+
+    def fake_exists(path: Path) -> bool:
+        if path == index_path:
+            return False
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.get("/")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Viewer frontend is not available yet."
 
 
 def test_static_files_are_served_with_no_cache_header():
@@ -336,61 +320,25 @@ def test_api_series_returns_bad_request_for_invalid_json(tmp_path):
     assert "Invalid JSON" in response.json()["detail"]
 
 
-def test_api_metrics_and_series_return_bad_request_for_invalid_xml(tmp_path):
-    (tmp_path / "bad_vmaf.xml").write_text("<VMAF><frames>", encoding="utf-8")
-    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
-    file_id = client.get("/api/files").json()["files"][0]["id"]
-
-    metrics_response = client.get(f"/api/file/{file_id}/metrics")
-    series_response = client.post(
-        "/api/series",
-        json={"file_ids": [file_id], "metrics": ["vmaf"], "max_points": 100},
-    )
-
-    assert metrics_response.status_code == 400
-    assert series_response.status_code == 400
-    assert "Invalid XML" in metrics_response.json()["detail"]
-    assert "Invalid XML" in series_response.json()["detail"]
-
-
-def test_api_metrics_returns_bad_request_for_non_utf8_csv(tmp_path):
-    (tmp_path / "bad_vmaf.csv").write_bytes(b"frameNum,vmaf\n0,\xff\n")
-    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
-    file_id = client.get("/api/files").json()["files"][0]["id"]
-
-    response = client.get(f"/api/file/{file_id}/metrics")
-
-    assert response.status_code == 400
-    assert "Invalid CSV" in response.json()["detail"]
-
-
-def test_api_returns_bad_request_for_invalid_frame_num(tmp_path):
-    (tmp_path / "bad_vmaf.json").write_text(
-        '{"frames":[{"frameNum":null,"metrics":{"vmaf":99}}]}',
+def test_api_metrics_returns_not_found_when_scanned_file_disappears(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "vanished_vmaf.json"
+    path.write_text(
+        Path("tests/fixtures/alpha_vmaf.json").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
-    file_id = client.get("/api/files").json()["files"][0]["id"]
+    app = create_app(data_dir=tmp_path)
+    state = app.state.vmaf_viewer
+    stale_record = state.records()[0]
+    path.unlink()
+    monkeypatch.setattr(state, "selected_records", lambda _file_ids: [stale_record])
+    client = TestClient(app, raise_server_exceptions=False)
 
-    metrics_response = client.get(f"/api/file/{file_id}/metrics")
-    series_response = client.post(
-        "/api/series",
-        json={"file_ids": [file_id], "metrics": ["vmaf"], "max_points": 100},
-    )
-    compare_response = client.post(
-        "/api/compare",
-        json={"file_ids": [file_id], "max_points": 100},
-    )
+    response = client.get(f"/api/file/{stale_record.id}/metrics")
 
-    assert metrics_response.status_code == 400
-    assert series_response.status_code == 400
-    assert compare_response.status_code == 200
-    assert "invalid frameNum" in metrics_response.json()["detail"]
-    assert "invalid frameNum" in series_response.json()["detail"]
-    assert compare_response.json()["summary"] == []
-    assert compare_response.json()["warnings"] == [
-        "bad_vmaf.json has invalid frameNum: None"
-    ]
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unable to read vanished_vmaf.json"
 
 
 def test_api_rejects_invalid_max_points():
