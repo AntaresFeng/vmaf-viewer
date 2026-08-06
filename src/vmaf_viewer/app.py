@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -25,6 +25,23 @@ from .scanner import scan_vmaf_files
 from .stats import downsample_series
 
 DEFAULT_THRESHOLDS = [95.0, 90.0, 80.0, 60.0]
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """Serve static files while asking browsers to revalidate before reusing.
+
+    Without an explicit ``Cache-Control``, browsers apply heuristic caching based
+    on ``Last-Modified`` and may keep running a stale copy of the frontend after
+    an edit. ``no-cache`` forces a revalidation on every load; unchanged files
+    still short-circuit to a cheap 304 via the existing ETag/Last-Modified.
+    """
+
+    def file_response(
+        self, full_path, stat_result, scope, status_code: int = 200
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 class CompareRequest(BaseModel):
@@ -200,7 +217,7 @@ def create_app(
     app.state.vmaf_viewer = state
 
     static_dir = Path(__file__).parent / "static"
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    app.mount("/static", NoCacheStaticFiles(directory=static_dir), name="static")
 
     @app.get("/")
     def index() -> FileResponse:

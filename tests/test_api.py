@@ -302,6 +302,15 @@ def test_index_returns_clear_response_when_frontend_is_missing():
         assert response.json()["detail"] == "Viewer frontend is not available yet."
 
 
+def test_static_files_are_served_with_no_cache_header():
+    client = TestClient(create_app(data_dir=Path("tests/fixtures")))
+
+    response = client.get("/static/app.js")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+
+
 def test_api_metrics_returns_bad_request_for_invalid_json(tmp_path):
     (tmp_path / "bad_vmaf.json").write_text("{not json", encoding="utf-8")
     client = TestClient(create_app(data_dir=tmp_path), raise_server_exceptions=False)
