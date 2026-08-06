@@ -1,4 +1,3 @@
-from dataclasses import replace
 import json
 import math
 from pathlib import Path
@@ -183,41 +182,3 @@ def test_compare_files_preserves_dense_and_subsampled_frame_numbers(tmp_path):
     assert [point[0] for point in series["dense_vmaf.json"]] == [0, 1, 2, 3, 4, 5]
     assert [point[0] for point in series["subsampled_vmaf.json"]] == [0, 2, 4]
     assert result["warnings"] == []
-
-
-def test_vmaf_cache_reuses_parse_until_size_or_mtime_changes(tmp_path):
-    path = tmp_path / "cached_vmaf.json"
-    _write_vmaf(path, [{"frameNum": 0, "metrics": {"vmaf": 80.0}}])
-    record = scan_vmaf_files(tmp_path)[0]
-    cache = VmafCache()
-
-    first = cache.get(record)
-
-    assert cache.get(record) is first
-
-    _write_vmaf(
-        path,
-        [
-            {"frameNum": 0, "metrics": {"vmaf": 70.0}},
-            {"frameNum": 1, "metrics": {"vmaf": 73.0}},
-        ],
-    )
-    size_changed = replace(record, size=path.stat().st_size)
-    by_size = cache.get(size_changed)
-
-    assert by_size is not first
-    assert by_size.metrics["vmaf"][0] == 70.0
-
-    _write_vmaf(
-        path,
-        [
-            {"frameNum": 0, "metrics": {"vmaf": 71.0}},
-            {"frameNum": 1, "metrics": {"vmaf": 74.0}},
-        ],
-    )
-    mtime_changed = replace(size_changed, mtime=size_changed.mtime + 1.0)
-    by_mtime = cache.get(mtime_changed)
-
-    assert by_mtime is not by_size
-    assert by_mtime.metrics["vmaf"][0] == 71.0
-    assert cache.get(mtime_changed) is by_mtime

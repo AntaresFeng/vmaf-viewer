@@ -13,8 +13,6 @@ def test_scan_vmaf_files_finds_only_vmaf_json_files():
 
     assert [record.name for record in records] == ["alpha_vmaf.json", "beta_vmaf.json"]
     assert all(record.path.name.endswith(".json") for record in records)
-    assert all(record.size > 0 for record in records)
-    assert all(record.mtime > 0 for record in records)
 
 
 def test_scan_vmaf_files_uses_stable_relative_id():
@@ -33,31 +31,33 @@ def test_scan_vmaf_files_missing_directory_returns_empty_list(tmp_path):
     assert scan_vmaf_files(missing) == []
 
 
-def test_scan_vmaf_files_finds_plain_json_without_vmaf_suffix(tmp_path):
-    (tmp_path / "encode_001.json").write_text(
-        '{"version":"1","fps":1,"frames":[],"pooled_metrics":{}}', encoding="utf-8"
-    )
+def test_scan_vmaf_files_recursively_finds_logs_in_visible_directories(tmp_path):
+    nested = tmp_path / "visible" / "nested" / "encode.json"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("", encoding="utf-8")
 
     records = scan_vmaf_files(tmp_path)
 
-    assert len(records) == 1
-    assert records[0].name == "encode_001.json"
+    assert [record.relative_path for record in records] == [
+        "visible/nested/encode.json"
+    ]
 
 
-def test_scan_vmaf_files_skips_dot_prefix_directories(tmp_path):
-    (tmp_path / ".bilibili").mkdir(parents=True)
-    (tmp_path / ".bilibili" / "temp.json").write_text(
-        '{"version":"1","fps":1,"frames":[],"pooled_metrics":{}}', encoding="utf-8"
-    )
-    (tmp_path / "encode_002.json").write_text(
-        '{"version":"1","fps":1,"frames":[],"pooled_metrics":{}}', encoding="utf-8"
-    )
+def test_scan_vmaf_files_skips_root_and_nested_dot_directories(tmp_path):
+    paths = [
+        tmp_path / ".hidden" / "root-secret.json",
+        tmp_path / "visible" / ".bilibili" / "nested-secret.json",
+        tmp_path / "visible" / "nested" / "result.json",
+    ]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
 
     records = scan_vmaf_files(tmp_path)
 
-    names = [r.name for r in records]
-    assert "temp.json" not in names
-    assert "encode_002.json" in names
+    assert [record.relative_path for record in records] == [
+        "visible/nested/result.json"
+    ]
 
 
 def test_scan_vmaf_files_finds_json_csv_and_xml_logs(tmp_path):

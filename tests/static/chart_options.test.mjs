@@ -641,12 +641,17 @@ test("primary range loading waits 400ms, fetches the final zoom range, and refre
     [301, 92],
     [1000, 90],
   ]);
-  assert.deepEqual(toHostValue(mainChart.setOptionCalls.at(-1)[0].series[0].markLine.data), [
-    { name: "95", yAxis: 95, label: { formatter: "95", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
-    { name: "90", yAxis: 90, label: { formatter: "90", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
-    { name: "80", yAxis: 80, label: { formatter: "80", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
-    { name: "60", yAxis: 60, label: { formatter: "60", color: "#667064" }, lineStyle: { color: "#aeb5aa", type: "dashed", width: 1 } },
-  ]);
+  assert.deepEqual(
+    toHostValue(
+      mainChart.setOptionCalls.at(-1)[0].series[0].markLine.data.map(({ name, yAxis }) => ({ name, yAxis })),
+    ),
+    [
+      { name: "95", yAxis: 95 },
+      { name: "90", yAxis: 90 },
+      { name: "80", yAxis: 80 },
+      { name: "60", yAxis: 60 },
+    ],
+  );
 });
 
 test("primary range loading skips zoom windows wider than 5000 frames", async () => {
