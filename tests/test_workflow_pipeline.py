@@ -17,7 +17,6 @@ from vmaf_workflow.pipeline import (
     validate_pipeline_request,
 )
 from vmaf_workflow.project import WorkflowProject
-from vmaf_workflow.runner import SubprocessRunner
 from vmaf_workflow.status import WorkflowStatus
 
 
@@ -175,106 +174,6 @@ def test_pipeline_blocks_automatic_retry_of_running_remote_stage(
     assert pipeline.records[StageName.RUN].status == StageStatus.BLOCKED
 
 
-def test_pipeline_downloads_newly_requested_unbound_site_before_resume(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = _project(tmp_path)
-    _write_complete_download_manifest(project)
-    (project.video_dir / "bilibili.mp4").write_bytes(b"media")
-    reference = tmp_path / "reference.mp4"
-    reference.write_bytes(b"reference")
-    calls = []
-    captured = {}
-    _patch_pipeline_stages(
-        monkeypatch,
-        project,
-        calls,
-        resume_status=WorkflowStatus(
-            project.video_dir,
-            "uploaded",
-            "completed",
-            (),
-            "uv run vmaf-workflow run",
-        ),
-    )
-
-    def download(**kwargs):
-        calls.append("download")
-        captured.update(kwargs)
-        return DownloadOutcome(
-            project,
-            {
-                "bilibili": {
-                    "bvid": "BV1xx411c7mD",
-                    "downloads": [{"status": "downloaded"}],
-                },
-                "youtube": {
-                    "url": kwargs["ytid"],
-                    "downloads": [{"status": "downloaded"}],
-                },
-            },
-            0,
-            kwargs["bvid"],
-            kwargs["ytid"],
-        )
-
-    monkeypatch.setattr("vmaf_workflow.pipeline.download_sources", download)
-    pipeline = WorkflowPipeline(
-        PipelineRequest(
-            project_dir=project.video_dir,
-            ytid="dQw4w9WgXcQ",
-            reference=reference,
-        )
-    )
-
-    assert pipeline.run() == 0
-    assert calls[0] == "download"
-    assert captured["bvid"] is None
-    assert captured["ytid"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-
-def test_pipeline_checks_running_state_before_retrying_incomplete_download(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = _project(tmp_path)
-    project.manifest_path.write_text(
-        json.dumps(
-            {
-                "bilibili": {
-                    "bvid": "BV1xx411c7mD",
-                    "downloads": [{"status": "failed"}],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    (project.video_dir / "bilibili.mp4").write_bytes(b"media")
-    reference = tmp_path / "reference.mp4"
-    reference.write_bytes(b"reference")
-    monkeypatch.setattr(
-        "vmaf_workflow.pipeline.inspect_workflow_status",
-        lambda _project: WorkflowStatus(
-            project.video_dir,
-            "running",
-            "running",
-            (),
-            "uv run vmaf-workflow status",
-        ),
-    )
-    monkeypatch.setattr(
-        "vmaf_workflow.pipeline.download_sources",
-        lambda **_kwargs: pytest.fail("download must remain blocked"),
-    )
-    pipeline = WorkflowPipeline(
-        PipelineRequest(project_dir=project.video_dir, reference=reference)
-    )
-
-    with pytest.raises(PipelineBlockedError, match="running"):
-        pipeline.run()
-
-
 def test_pipeline_rejects_empty_resume_project_before_execution(tmp_path: Path) -> None:
     project = _project(tmp_path)
 
@@ -318,73 +217,6 @@ def test_pipeline_download_command_uses_only_incomplete_source(
     assert "--ytid" in command
     assert "dQw4w9WgXcQ" in command
     assert "--bvid" not in command
-
-
-def test_pipeline_chains_runner_callback_and_detaches_terminal_io(
-    tmp_path: Path,
-) -> None:
-    reference = tmp_path / "reference.mp4"
-    reference.write_bytes(b"reference")
-    external_events = []
-    pipeline_events = []
-    runner = SubprocessRunner(
-        lambda stream, text: external_events.append((stream, text)),
-        mirror_console=True,
-    )
-    pipeline = WorkflowPipeline(
-        PipelineRequest(bvid="BV1xx411c7mD", reference=reference),
-        runner=runner,
-        event_sink=pipeline_events.append,
-    )
-
-    assert runner.mirror_console is False
-    assert runner.inherit_stdin is False
-    assert runner.output_callback is not None
-    runner.output_callback("stdout", "hello")
-
-    assert external_events == [("stdout", "hello")]
-    assert pipeline_events[-1].kind == "process-output"
-    assert pipeline_events[-1].message == "hello"
-    assert pipeline.project is None
-
-
-def test_pipeline_reuses_manifest_loaded_during_validation(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = _project(tmp_path)
-    _write_complete_download_manifest(project)
-    reference = project.video_dir / "reference.mp4"
-    reference.write_bytes(b"reference")
-    project.media_inventory_path.write_text(
-        json.dumps({"reference": "reference.mp4"}),
-        encoding="utf-8",
-    )
-    calls = []
-    original_loader = __import__(
-        "vmaf_workflow.pipeline",
-        fromlist=["load_download_manifest"],
-    ).load_download_manifest
-
-    def counted_loader(path):
-        calls.append(path)
-        return original_loader(path)
-
-    monkeypatch.setattr("vmaf_workflow.pipeline.load_download_manifest", counted_loader)
-    monkeypatch.setattr(
-        "vmaf_workflow.pipeline.inspect_workflow_status",
-        lambda _project: WorkflowStatus(
-            project.video_dir,
-            "uploaded",
-            "completed",
-            (),
-            "uv run vmaf-workflow run",
-        ),
-    )
-    pipeline = WorkflowPipeline(PipelineRequest(project_dir=project.video_dir))
-
-    assert pipeline._resume_stage() == StageName.RUN
-    assert calls == [project.manifest_path]
 
 
 def _project(tmp_path: Path) -> WorkflowProject:

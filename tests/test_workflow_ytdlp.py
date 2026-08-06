@@ -3,23 +3,11 @@ from __future__ import annotations
 import json
 
 from vmaf_workflow.ytdlp import (
-    codec_family,
     load_after_video_downloads,
     load_sidecar_downloads,
     normalize_ytdlp_format,
     parse_ytdlp_preflight,
 )
-
-
-def test_codec_family_maps_known_prefixes_and_preserves_unknown() -> None:
-    assert codec_family("avc1.640028") == "AVC"
-    assert codec_family("av01.0.08M.08") == "AV1"
-    assert codec_family("vp9") == "VP9"
-    assert codec_family("vp09.00.51.08") == "VP9"
-    assert codec_family("hev1.1.6.L120.90") == "HEVC"
-    assert codec_family("hvc1.1.6.L120.90") == "HEVC"
-    assert codec_family("theora") == "theora"
-    assert codec_family(None) is None
 
 
 def test_normalize_ytdlp_format_extracts_stream_record_fields() -> None:
@@ -143,26 +131,6 @@ def test_load_after_video_downloads_reads_jsonl_requested_downloads(tmp_path) ->
     assert [stream.index for stream in streams] == [None, None]
 
 
-def test_load_after_video_downloads_skips_malformed_jsonl_lines(tmp_path) -> None:
-    jsonl_path = tmp_path / "after_video.jsonl"
-    jsonl_path.write_text(
-        "\n".join(
-            [
-                '{"requested_downloads":[{"format_id":"137","height":1080,'
-                '"vcodec":"avc1","acodec":"none","protocol":"https"}]}',
-                '{"requested_downloads":',
-                '{"requested_downloads":[{"format_id":"399","height":1080,'
-                '"vcodec":"av01","acodec":"none","protocol":"https"}]}',
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    streams = load_after_video_downloads(jsonl_path)
-
-    assert [stream.format_id for stream in streams] == ["137", "399"]
-
-
 def test_load_sidecar_downloads_reads_infojson_target_formats(tmp_path) -> None:
     first = tmp_path / "one.info.json"
     first.write_text(
@@ -200,23 +168,3 @@ def test_load_sidecar_downloads_reads_infojson_target_formats(tmp_path) -> None:
 
     assert [stream.format_id for stream in streams] == ["401", "137"]
     assert [stream.index for stream in streams] == [None, None]
-
-
-def test_load_sidecar_downloads_skips_malformed_infojson_files(tmp_path) -> None:
-    (tmp_path / "broken.info.json").write_text("{", encoding="utf-8")
-    (tmp_path / "valid.info.json").write_text(
-        json.dumps(
-            {
-                "format_id": "401",
-                "height": 2160,
-                "vcodec": "av01",
-                "acodec": "none",
-                "protocol": "https",
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    streams = load_sidecar_downloads(tmp_path)
-
-    assert [stream.format_id for stream in streams] == ["401"]

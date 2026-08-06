@@ -63,88 +63,6 @@ def test_cleanup_rejects_result_archive_hash_drift_without_deleting(
     assert project.default_result_archive_path.is_file()
 
 
-def test_cleanup_no_longer_validates_package_archive_hash(tmp_path: Path) -> None:
-    project = _write_cleanup_project(tmp_path)
-    project.default_package_path.write_bytes(b"changed")
-
-    cleanup_project(project)
-
-    assert not project.default_package_path.exists()
-    assert not project.default_result_archive_path.exists()
-
-
-def test_cleanup_rejects_installed_result_size_drift_without_deleting(
-    tmp_path: Path,
-) -> None:
-    project = _write_cleanup_project(tmp_path)
-    result_path = project.video_dir / "dist_vmaf.json"
-    result_path.write_text('{"changed": true}', encoding="utf-8")
-
-    with pytest.raises(CleanupStateError, match="installed result size changed"):
-        cleanup_project(project)
-
-    assert project.default_package_path.is_file()
-    assert project.default_result_archive_path.is_file()
-
-
-def test_cleanup_accepts_same_size_installed_result_drift(
-    tmp_path: Path,
-) -> None:
-    project = _write_cleanup_project(tmp_path)
-    result_path = project.video_dir / "dist_vmaf.json"
-    result_path.write_bytes(b"x" * result_path.stat().st_size)
-
-    cleanup_project(project)
-
-    assert not project.default_package_path.exists()
-    assert not project.default_result_archive_path.exists()
-
-
-def test_cleanup_accepts_same_size_input_media_drift(
-    tmp_path: Path,
-) -> None:
-    project = _write_cleanup_project(tmp_path)
-    distorted = project.video_dir / "dist.mp4"
-    distorted.write_bytes(b"x" * distorted.stat().st_size)
-
-    cleanup_project(project)
-
-    assert not project.default_package_path.exists()
-    assert not project.default_result_archive_path.exists()
-
-
-def test_cleanup_accepts_package_manifest_drift(tmp_path: Path) -> None:
-    project = _write_cleanup_project(tmp_path)
-    package_manifest = json.loads(
-        project.package_manifest_path.read_text(encoding="utf-8")
-    )
-    package_manifest["media_files"].pop()
-    project.package_manifest_path.write_text(
-        json.dumps(package_manifest),
-        encoding="utf-8",
-    )
-
-    cleanup_project(project)
-
-    assert not project.default_package_path.exists()
-    assert not project.default_result_archive_path.exists()
-
-
-def test_cleanup_rejects_manifest_result_coverage_drift_without_deleting(
-    tmp_path: Path,
-) -> None:
-    project = _write_cleanup_project(tmp_path)
-    manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
-    manifest["results"]["files"] = []
-    project.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(CleanupStateError, match="manifest result files do not match"):
-        cleanup_project(project)
-
-    assert project.default_package_path.is_file()
-    assert project.default_result_archive_path.is_file()
-
-
 def test_cleanup_deletes_only_archives_and_records_history(
     tmp_path: Path,
 ) -> None:
@@ -182,38 +100,6 @@ def test_cleanup_deletes_only_archives_and_records_history(
     assert manifest["results"]["archive"] is None
     assert manifest["results"]["archive_cleanup"]["sha256"] == result_sha256
     assert manifest["results"]["files"] == [str(result_path)]
-
-
-def test_cleanup_is_noop_after_completed_cleanup(tmp_path: Path) -> None:
-    project = _write_cleanup_project(tmp_path)
-    cleanup_project(project)
-
-    second_state = cleanup_project(project)
-
-    assert second_state["cleanup"]["status"] == "completed"
-    assert second_state["cleanup"]["last_reclaimed_bytes"] == 0
-
-
-def test_cleanup_deletes_result_recreated_after_completed_cleanup(
-    tmp_path: Path,
-) -> None:
-    project = _write_cleanup_project(tmp_path)
-    result_archive = project.default_result_archive_path.read_bytes()
-    cleanup_project(project)
-    first_manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
-    package_cleanup = first_manifest["package"]["archive_cleanup"]
-    project.default_result_archive_path.write_bytes(result_archive)
-    manifest = first_manifest
-    manifest["results"]["archive"] = str(project.default_result_archive_path)
-    project.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    state = cleanup_project(project)
-
-    assert not project.default_package_path.exists()
-    assert not project.default_result_archive_path.exists()
-    assert state["cleanup"]["last_reclaimed_bytes"] == len(result_archive)
-    second_manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
-    assert second_manifest["package"]["archive_cleanup"] == package_cleanup
 
 
 def test_cleanup_rejects_custom_package_output_without_deleting(

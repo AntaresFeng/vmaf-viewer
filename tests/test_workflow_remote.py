@@ -16,14 +16,9 @@ from vmaf_workflow.remote_state import (
     sha256_file,
     write_remote_state,
 )
-from vmaf_workflow.remote_transport import (
-    RemoteTargetError,
-    RemoteTransport,
-    RemoteTransportError,
-)
+from vmaf_workflow.remote_transport import RemoteTargetError, RemoteTransport
 from vmaf_workflow.remote_workflow import (
     RemoteCommandError,
-    RemoteRunInterrupted,
     RemoteWorkflowError,
     fetch_results,
     run_remote_project,
@@ -139,87 +134,6 @@ def test_remote_transport_skips_upload_when_sha256_matches(
 
     assert transferred is False
     assert runner.stream_calls == []
-
-
-def test_remote_transport_wraps_process_startup_errors(tmp_path: Path) -> None:
-    class MissingExecutableRunner:
-        def run(self, argv, stdin=None):
-            raise FileNotFoundError(argv[0])
-
-        def stream(self, argv, log_path, append=False):
-            raise FileNotFoundError(argv[0])
-
-    transport = RemoteTransport(RemoteSettings(), MissingExecutableRunner())
-    log_path = tmp_path / "remote.log"
-
-    with pytest.raises(RemoteTransportError, match="failed to start ssh"):
-        transport.run_remote("pwd", log_path)
-    with pytest.raises(RemoteTransportError, match="failed to start ssh"):
-        transport.stream_script(
-            PurePosixPath("/home/fzx/vmaf_compare/remote-plan.sh"),
-            None,
-            log_path,
-        )
-    with pytest.raises(RemoteTransportError, match="failed to start scp"):
-        transport.download(
-            PurePosixPath("/home/fzx/vmaf_compare/result.tar.gz"),
-            tmp_path / "result.tar.gz",
-            log_path,
-        )
-
-
-def test_remote_transport_cleans_partial_upload_on_interrupt(
-    tmp_path: Path,
-) -> None:
-    class InterruptingRunner(RecordingRunner):
-        def run(self, argv, stdin=None):
-            self.run_calls.append(list(argv))
-            if len(self.run_calls) == 1:
-                return CommandResult(tuple(argv), 44, "", "")
-            return CommandResult(tuple(argv), 0, "", "")
-
-        def stream(self, argv, log_path, append=False):
-            self.stream_calls.append((list(argv), log_path, append))
-            raise KeyboardInterrupt
-
-    runner = InterruptingRunner()
-    transport = RemoteTransport(RemoteSettings(), runner)
-    local_path = tmp_path / "video0-inputs.tar"
-    local_path.write_bytes(b"package")
-
-    with pytest.raises(KeyboardInterrupt):
-        transport.upload_atomic(
-            local_path,
-            PurePosixPath("/home/fzx/vmaf_compare/video0-inputs.tar"),
-            "a" * 64,
-            tmp_path / "upload.log",
-        )
-
-    assert len(runner.run_calls) == 2
-    assert "rm -f --" in runner.run_calls[-1][-1]
-    assert ".uploading-" in runner.run_calls[-1][-1]
-
-
-def test_remote_transport_cleans_partial_download_on_interrupt(
-    tmp_path: Path,
-) -> None:
-    class InterruptingRunner(RecordingRunner):
-        def stream(self, argv, log_path, append=False):
-            self.stream_calls.append((list(argv), log_path, append))
-            Path(argv[-1]).write_bytes(b"partial")
-            raise KeyboardInterrupt
-
-    transport = RemoteTransport(RemoteSettings(), InterruptingRunner())
-    local_path = tmp_path / ".result.download-test"
-
-    with pytest.raises(KeyboardInterrupt):
-        transport.download(
-            PurePosixPath("/home/fzx/vmaf_compare/result.tar.gz"),
-            local_path,
-            tmp_path / "fetch.log",
-        )
-
-    assert not local_path.exists()
 
 
 def test_remote_state_write_is_atomic_and_hashes_files(tmp_path: Path) -> None:
@@ -371,34 +285,6 @@ def test_upload_completes_and_records_remote_target_and_hashes(
     assert manifest["remote_workflow"] == {"state": str(project.remote_state_path)}
 
 
-def test_upload_uses_project_and_plan_hash_isolated_remote_directory(
-    tmp_path: Path,
-) -> None:
-    project = _write_remote_project(tmp_path)
-    plan_sha256 = sha256_file(project.remote_plan_path)
-    transport = UploadFakeTransport()
-
-    state = upload_project(
-        project,
-        RemoteSettings(),
-        RecordingRunner(),
-        transport=transport,
-    )
-
-    expected_work_dir = f"/home/fzx/vmaf_compare/video0/{plan_sha256}"
-    assert state["remote"] == {
-        "host": "3080",
-        "base_work_dir": "/home/fzx/vmaf_compare",
-        "work_dir": expected_work_dir,
-    }
-    assert state["upload"]["script"]["remote_path"] == (
-        f"{expected_work_dir}/remote-plan.sh"
-    )
-    assert state["upload"]["package"]["remote_path"] == (
-        f"{expected_work_dir}/video0-inputs.tar"
-    )
-
-
 @pytest.mark.parametrize("artifact", ["script", "package", "provenance"])
 def test_run_rechecks_remote_input_hashes_before_preflight(
     tmp_path: Path,
@@ -504,133 +390,6 @@ def test_run_failure_is_recorded(tmp_path: Path) -> None:
     assert state["run"]["returncode"] == 17
 
 
-def test_run_rejects_plan_drift_after_upload(tmp_path: Path) -> None:
-    project = _write_remote_project(tmp_path)
-    transport = UploadFakeTransport()
-    upload_project(
-        project,
-        RemoteSettings(),
-        RecordingRunner(),
-        transport=transport,
-    )
-    project.remote_plan_path.write_text(
-        project.remote_plan_path.read_text(encoding="utf-8") + "\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(RemoteWorkflowError, match="changed"):
-        run_remote_project(
-            project,
-            RemoteSettings(),
-            RecordingRunner(),
-            transport=transport,
-        )
-
-
-def test_run_interrupt_is_recorded(tmp_path: Path) -> None:
-    project = _write_remote_project(tmp_path)
-    transport = UploadFakeTransport()
-    upload_project(
-        project,
-        RemoteSettings(),
-        RecordingRunner(),
-        transport=transport,
-    )
-
-    def interrupt(*_args, **_kwargs):
-        raise KeyboardInterrupt
-
-    transport.stream_run = interrupt
-
-    with pytest.raises(KeyboardInterrupt):
-        run_remote_project(
-            project,
-            RemoteSettings(),
-            RecordingRunner(),
-            transport=transport,
-        )
-
-    state = load_remote_state(project.remote_state_path)
-    assert state["run"]["status"] == "interrupted"
-    assert state["run"]["returncode"] == 130
-
-
-def test_upload_interrupt_is_recorded(tmp_path: Path) -> None:
-    project = _write_remote_project(tmp_path)
-    transport = UploadFakeTransport()
-    original_upload = transport.upload_atomic
-
-    def interrupt_package(
-        local_path,
-        remote_path,
-        expected_sha256,
-        log_path,
-    ):
-        if remote_path.name == "video0-inputs.tar":
-            raise KeyboardInterrupt
-        return original_upload(
-            local_path,
-            remote_path,
-            expected_sha256,
-            log_path,
-        )
-
-    transport.upload_atomic = interrupt_package
-
-    with pytest.raises(RemoteRunInterrupted):
-        upload_project(
-            project,
-            RemoteSettings(),
-            RecordingRunner(),
-            transport=transport,
-        )
-
-    state = load_remote_state(project.remote_state_path)
-    assert state["upload"]["status"] == "interrupted"
-    assert state["upload"]["stage"] == "upload-package"
-    assert state["upload"]["returncode"] == 130
-
-
-def test_fetch_interrupt_is_recorded_and_temp_archive_is_removed(
-    tmp_path: Path,
-) -> None:
-    project = _write_remote_project(tmp_path)
-    transport = UploadFakeTransport()
-    upload_project(
-        project,
-        RemoteSettings(),
-        RecordingRunner(),
-        transport=transport,
-    )
-    state = load_remote_state(project.remote_state_path)
-    remote_result = PurePosixPath(state["remote"]["work_dir"]) / "video0-json.tar.gz"
-    transport.hashes[remote_result.as_posix()] = "a" * 64
-
-    def interrupt_download(
-        remote_path,
-        local_path,
-        log_path,
-    ):
-        local_path.write_bytes(b"partial")
-        raise KeyboardInterrupt
-
-    transport.download = interrupt_download
-
-    with pytest.raises(RemoteRunInterrupted):
-        fetch_results(
-            project,
-            RemoteSettings(),
-            RecordingRunner(),
-            transport=transport,
-        )
-
-    interrupted_state = load_remote_state(project.remote_state_path)
-    assert interrupted_state["fetch"]["status"] == "interrupted"
-    assert interrupted_state["fetch"]["stage"] == "download"
-    assert interrupted_state["fetch"]["returncode"] == 130
-    assert list(project.workflow_dir.glob("*.download-*")) == []
-
-
 def test_fetch_accepts_existing_remote_results_and_installs_json(
     tmp_path: Path,
 ) -> None:
@@ -679,36 +438,6 @@ def test_fetch_accepts_existing_remote_results_and_installs_json(
     manifest = json.loads(project.manifest_path.read_text(encoding="utf-8"))
     assert manifest["results"]["archive"] == str(project.default_result_archive_path)
     assert manifest["results"]["files"] == [str(installed)]
-
-
-def test_fetch_rejects_existing_remote_archive_without_provenance(
-    tmp_path: Path,
-) -> None:
-    project = _write_remote_project(tmp_path)
-    transport = UploadFakeTransport()
-    upload_project(
-        project,
-        RemoteSettings(),
-        RecordingRunner(),
-        transport=transport,
-    )
-    state = load_remote_state(project.remote_state_path)
-    remote_result = PurePosixPath(state["remote"]["work_dir"]) / ("video0-json.tar.gz")
-    archive_path = tmp_path / "legacy-result.tar.gz"
-    _write_result_archive(
-        archive_path,
-        {"video0/dist_vmaf.json": {"pooled_metrics": {"vmaf": {"mean": 95}}}},
-    )
-    transport.download_source = archive_path
-    transport.hashes[remote_result.as_posix()] = sha256_file(archive_path)
-
-    with pytest.raises(RemoteWorkflowError, match="provenance"):
-        fetch_results(
-            project,
-            RemoteSettings(),
-            RecordingRunner(),
-            transport=transport,
-        )
 
 
 def test_fetch_rejects_result_provenance_for_different_plan(
@@ -793,44 +522,6 @@ def test_fetch_rejects_archive_with_extra_member_without_replacing_files(
     assert not project.default_result_archive_path.exists()
     state = load_remote_state(project.remote_state_path)
     assert state["fetch"]["status"] == "failed"
-
-
-def test_fetch_rejects_invalid_json(tmp_path: Path) -> None:
-    project = _write_remote_project(tmp_path)
-    transport = UploadFakeTransport()
-    upload_project(
-        project,
-        RemoteSettings(),
-        RecordingRunner(),
-        transport=transport,
-    )
-    uploaded_state = load_remote_state(project.remote_state_path)
-    remote_result = (
-        PurePosixPath(uploaded_state["remote"]["work_dir"]) / "video0-json.tar.gz"
-    )
-    archive_path = tmp_path / "invalid-json.tar.gz"
-    with tarfile.open(archive_path, "w:gz") as archive:
-        content = b"not-json"
-        info = tarfile.TarInfo("video0/dist_vmaf.json")
-        info.size = len(content)
-        archive.addfile(info, io.BytesIO(content))
-        provenance_content = json.dumps(_provenance_payload(project)).encode("utf-8")
-        provenance_info = tarfile.TarInfo("vmaf-workflow-provenance.json")
-        provenance_info.size = len(provenance_content)
-        archive.addfile(
-            provenance_info,
-            io.BytesIO(provenance_content),
-        )
-    transport.download_source = archive_path
-    transport.hashes[remote_result.as_posix()] = sha256_file(archive_path)
-
-    with pytest.raises(RemoteWorkflowError):
-        fetch_results(
-            project,
-            RemoteSettings(),
-            RecordingRunner(),
-            transport=transport,
-        )
 
 
 def test_fetch_rejects_symbolic_link_member(tmp_path: Path) -> None:

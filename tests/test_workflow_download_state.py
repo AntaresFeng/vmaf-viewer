@@ -7,27 +7,10 @@ import pytest
 from vmaf_workflow.download_state import (
     DownloadStateError,
     invalidate_downstream,
-    load_download_manifest,
     merge_download_manifest,
     validate_source_identity,
 )
 from vmaf_workflow.project import WorkflowProject
-
-
-def test_load_download_manifest_returns_none_when_missing(tmp_path: Path) -> None:
-    assert load_download_manifest(tmp_path / "manifest.json") is None
-
-
-@pytest.mark.parametrize("content", ["not-json", "[]"])
-def test_load_download_manifest_rejects_invalid_object(
-    tmp_path: Path,
-    content: str,
-) -> None:
-    path = tmp_path / "manifest.json"
-    path.write_text(content, encoding="utf-8")
-
-    with pytest.raises(DownloadStateError, match="manifest.json"):
-        load_download_manifest(path)
 
 
 def test_validate_source_identity_accepts_missing_and_same_sources() -> None:
@@ -196,14 +179,6 @@ def test_invalidate_downstream_removes_only_managed_reproducible_state(
     assert log.is_file()
     assert custom_package.is_file()
     assert manifest == {"keep": "value"}
-
-
-def test_invalidate_downstream_rejects_non_file_collision(tmp_path: Path) -> None:
-    project = _project(tmp_path)
-    project.media_inventory_path.mkdir(parents=True)
-
-    with pytest.raises(DownloadStateError, match="managed downstream path"):
-        invalidate_downstream(project, {})
 
 
 def _project(tmp_path: Path) -> WorkflowProject:

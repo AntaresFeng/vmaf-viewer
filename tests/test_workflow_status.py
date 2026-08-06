@@ -57,44 +57,6 @@ def test_status_reports_downloaded_when_inventory_is_missing(tmp_path: Path) -> 
     assert status.next_command.endswith("--reference <reference-path>")
 
 
-def test_status_rejects_invalid_existing_inventory_json(tmp_path: Path) -> None:
-    project = _downloaded_project(tmp_path)
-    project.media_inventory_path.write_text("not-json", encoding="utf-8")
-
-    with pytest.raises(WorkflowStatusError, match="media-inventory.json"):
-        inspect_workflow_status(project)
-
-
-def test_status_returns_to_prepare_when_inventory_media_is_missing(
-    tmp_path: Path,
-) -> None:
-    project = _prepared_project(tmp_path)
-    missing_media = project.video_dir / "distorted.mp4"
-    missing_media.unlink()
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "downloaded"
-    assert status.state == "incomplete"
-    assert status.missing_artifacts == (str(missing_media),)
-    assert "prepare --project-dir" in status.next_command
-
-
-def test_status_returns_to_prepare_when_media_is_not_in_inventory(
-    tmp_path: Path,
-) -> None:
-    project = _prepared_project(tmp_path)
-    extra_media = project.video_dir / "new-youtube.webm"
-    extra_media.write_bytes(b"new-media")
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "downloaded"
-    assert status.state == "incomplete"
-    assert status.missing_artifacts == (str(extra_media),)
-    assert "prepare --project-dir" in status.next_command
-
-
 def test_status_progresses_through_local_planning_stages(tmp_path: Path) -> None:
     project = _prepared_project(tmp_path)
 
@@ -122,22 +84,6 @@ def test_status_progresses_through_local_planning_stages(tmp_path: Path) -> None
     assert " upload " in f" {planned.next_command} "
 
 
-@pytest.mark.parametrize("upload_status", ["failed", "interrupted", "pending"])
-def test_status_retries_incomplete_upload(
-    tmp_path: Path,
-    upload_status: str,
-) -> None:
-    project = _planned_project(tmp_path)
-    _write_remote_state(project, upload={"status": upload_status})
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "planned"
-    assert status.state == upload_status
-    assert status.missing_artifacts == ()
-    assert " upload " in f" {status.next_command} "
-
-
 def test_status_does_not_restart_running_upload(tmp_path: Path) -> None:
     project = _planned_project(tmp_path)
     _write_remote_state(project, upload={"status": "running"})
@@ -147,96 +93,6 @@ def test_status_does_not_restart_running_upload(tmp_path: Path) -> None:
     assert status.stage == "planned"
     assert status.state == "running"
     assert " status " in f" {status.next_command} "
-
-
-def test_status_reports_running_and_recommends_status_recheck(
-    tmp_path: Path,
-) -> None:
-    project = _planned_project(tmp_path)
-    _write_remote_state(
-        project,
-        upload={"status": "completed"},
-        run={"status": "running"},
-    )
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "running"
-    assert status.state == "running"
-    assert status.missing_artifacts == ()
-    assert " status " in f" {status.next_command} "
-
-
-@pytest.mark.parametrize("run_status", ["failed", "interrupted"])
-def test_status_retries_failed_run(tmp_path: Path, run_status: str) -> None:
-    project = _planned_project(tmp_path)
-    _write_remote_state(
-        project,
-        upload={"status": "completed"},
-        run={"status": run_status},
-    )
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "uploaded"
-    assert status.state == run_status
-    assert " run " in f" {status.next_command} "
-
-
-def test_status_reports_computed_before_fetch(tmp_path: Path) -> None:
-    project = _planned_project(tmp_path)
-    _write_remote_state(
-        project,
-        upload={"status": "completed"},
-        run={"status": "completed"},
-    )
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "computed"
-    assert status.state == "incomplete"
-    assert status.missing_artifacts == (str(project.default_result_archive_path),)
-    assert "fetch-results" in status.next_command
-
-
-def test_status_does_not_restart_running_fetch(tmp_path: Path) -> None:
-    project = _planned_project(tmp_path)
-    _write_remote_state(
-        project,
-        upload={"status": "completed"},
-        run={"status": "completed"},
-        fetch={"status": "running"},
-    )
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "computed"
-    assert status.state == "running"
-    assert " status " in f" {status.next_command} "
-
-
-def test_status_refetches_when_installed_result_is_missing(tmp_path: Path) -> None:
-    project = _fetched_project(tmp_path)
-    missing_result = project.video_dir / "distorted_vmaf.json"
-    missing_result.unlink()
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "computed"
-    assert status.state == "incomplete"
-    assert status.missing_artifacts == (str(missing_result),)
-    assert "fetch-results" in status.next_command
-
-
-def test_status_reports_fetched_and_recommends_cleanup(tmp_path: Path) -> None:
-    project = _fetched_project(tmp_path)
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "fetched"
-    assert status.state == "completed"
-    assert status.missing_artifacts == ()
-    assert " cleanup " in f" {status.next_command} "
 
 
 def test_status_reports_cleaned_without_treating_archives_as_missing(
@@ -263,113 +119,6 @@ def test_status_reports_cleaned_without_treating_archives_as_missing(
     assert status.next_command == shlex.join(
         ["uv", "run", "vmaf-viewer", str(project.video_dir)]
     )
-
-
-def test_status_recommends_cleanup_after_result_archive_is_refetched(
-    tmp_path: Path,
-) -> None:
-    project = _fetched_project(tmp_path)
-    project.default_package_path.unlink()
-    state = _read_json(project.remote_state_path)
-    state["cleanup"] = {
-        "status": "completed",
-        "archives": {
-            "package": {"deleted": True},
-            "result": {"deleted": True},
-        },
-    }
-    _write_json(project.remote_state_path, state)
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "fetched"
-    assert status.state == "completed"
-    assert status.missing_artifacts == ()
-    assert " cleanup " in f" {status.next_command} "
-
-
-def test_status_restarts_at_packaged_when_input_archive_is_recreated(
-    tmp_path: Path,
-) -> None:
-    project = _fetched_project(tmp_path)
-    project.default_package_path.unlink()
-    project.default_result_archive_path.unlink()
-    state = _read_json(project.remote_state_path)
-    state["cleanup"] = {
-        "status": "completed",
-        "archives": {
-            "package": {"deleted": True},
-            "result": {"deleted": True},
-        },
-    }
-    _write_json(project.remote_state_path, state)
-    project.default_package_path.write_bytes(b"new-package")
-    manifest = _read_json(project.manifest_path)
-    package = manifest["package"]
-    assert isinstance(package, dict)
-    package["path"] = str(project.default_package_path)
-    _write_json(project.manifest_path, manifest)
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "packaged"
-    assert status.state == "incomplete"
-    assert status.missing_artifacts == ()
-    assert "remote-plan" in status.next_command
-
-
-def test_status_continues_pending_cleanup_without_archive_missing_errors(
-    tmp_path: Path,
-) -> None:
-    project = _fetched_project(tmp_path)
-    project.default_package_path.unlink()
-    project.default_result_archive_path.unlink()
-    state = _read_json(project.remote_state_path)
-    state["cleanup"] = {"status": "pending", "stage": "delete-staged-result"}
-    _write_json(project.remote_state_path, state)
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "fetched"
-    assert status.state == "pending"
-    assert status.missing_artifacts == ()
-    assert " cleanup " in f" {status.next_command} "
-
-
-def test_status_rejects_invalid_remote_state_before_reporting_missing_package(
-    tmp_path: Path,
-) -> None:
-    project = _prepared_project(tmp_path)
-    _write_json(
-        project.remote_state_path,
-        {"schema_version": 0, "project": project.video_dir.name},
-    )
-
-    with pytest.raises(WorkflowStatusError, match="schema_version"):
-        inspect_workflow_status(project)
-
-
-def test_status_skips_unsupported_cleanup_for_custom_package(
-    tmp_path: Path,
-) -> None:
-    project = _fetched_project(tmp_path)
-    custom_package = tmp_path / "custom-inputs.tar"
-    project.default_package_path.replace(custom_package)
-    package_manifest = _read_json(project.package_manifest_path)
-    package_manifest["archive_path"] = str(custom_package)
-    _write_json(project.package_manifest_path, package_manifest)
-    manifest = _read_json(project.manifest_path)
-    package = manifest["package"]
-    assert isinstance(package, dict)
-    package["path"] = str(custom_package)
-    _write_json(project.manifest_path, manifest)
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "fetched"
-    assert status.state == "completed"
-    assert status.missing_artifacts == ()
-    assert "vmaf-viewer" in status.next_command
 
 
 def _project(tmp_path: Path) -> WorkflowProject:

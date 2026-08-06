@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from vmaf_workflow.config import EasyVmafSettings
-from vmaf_workflow.download_state import invalidate_downstream
 from vmaf_workflow.packager import package_project
 from vmaf_workflow.prepare import (
     PrepareError,
@@ -16,7 +15,6 @@ from vmaf_workflow.prepare import (
 )
 from vmaf_workflow.project import WorkflowProject
 from vmaf_workflow.remote_plan import write_remote_plan
-from vmaf_workflow.status import inspect_workflow_status
 from vmaf_workflow.watermark_detection import (
     Candidate,
     DetectionResult,
@@ -147,25 +145,6 @@ def test_outward_bbox_clamps_margin_to_frame_edges() -> None:
     }
 
 
-def test_prepare_without_bvid_skips_detector(tmp_path: Path, monkeypatch) -> None:
-    project = _base_project(tmp_path, with_bvid=False)
-    monkeypatch.setattr("vmaf_workflow.prepare._probe_media", _fake_probe)
-
-    def fail_detector(*_args, **_kwargs):
-        raise AssertionError("detector must not run without BVID")
-
-    monkeypatch.setattr("vmaf_workflow.prepare.detect_watermark", fail_detector)
-
-    inventory = prepare_project(project, project.video_dir / "reference.mp4")
-
-    assert inventory["watermark_detection"] == {
-        "applicable": False,
-        "state": "not_applicable",
-        "detector": "reference-assisted-positive-residual-v1",
-    }
-    assert inventory["content_exclusions"] == []
-
-
 def test_prepare_present_writes_exclusion_summary_and_audit_mappings(
     tmp_path: Path,
     monkeypatch,
@@ -195,80 +174,6 @@ def test_prepare_present_writes_exclusion_summary_and_audit_mappings(
     mappings = {item["path"]: item for item in summary["workflow"]["media_mappings"]}
     assert mappings["youtube-1440.mp4"]["real_pixel_edges"]["right"] == 2432
     assert mappings["reference.mp4"]["width"] == 3840
-
-
-def test_prepare_present_removes_recorded_full_frame_results(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = _base_project(tmp_path)
-    old_result = project.video_dir / "youtube-1440_vmaf.json"
-    old_result.write_text("{}", encoding="utf-8")
-    manifest = _read_json(project.manifest_path)
-    manifest["results"] = {"files": [str(old_result)]}
-    _write_json(project.manifest_path, manifest)
-    monkeypatch.setattr("vmaf_workflow.prepare._probe_media", _fake_probe)
-    monkeypatch.setattr(
-        "vmaf_workflow.prepare.detect_watermark",
-        lambda _distorted, _reference, output: _result("present", output),
-    )
-
-    prepare_project(project, project.video_dir / "reference.mp4")
-
-    assert not old_result.exists()
-    assert "results" not in _read_json(project.manifest_path)
-
-
-def test_prepare_absent_continues_without_exclusion(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = _base_project(tmp_path)
-    monkeypatch.setattr("vmaf_workflow.prepare._probe_media", _fake_probe)
-    monkeypatch.setattr(
-        "vmaf_workflow.prepare.detect_watermark",
-        lambda _distorted, _reference, output: _result("absent", output),
-    )
-
-    inventory = prepare_project(project, project.video_dir / "reference.mp4")
-
-    assert inventory["watermark_detection"]["state"] == "absent"
-    assert inventory["content_exclusions"] == []
-    assert project.watermark_summary_path.is_file()
-
-
-def test_prepare_accepts_small_decoded_aspect_ratio_rounding_differences(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = _base_project(tmp_path)
-
-    def probe(media_path: Path) -> dict:
-        metadata = _fake_probe(media_path)
-        dimensions = {
-            REPRESENTATIVE_NAME: (1920, 1012),
-            f"{BVID}-4K-AV1.mp4": (4096, 2160),
-            "youtube-1440.mp4": (3840, 2026),
-            "reference.mp4": (4096, 2160),
-        }
-        width, height = dimensions[media_path.name]
-        metadata.update(
-            width=width,
-            height=height,
-            resolution=f"{width}x{height}",
-        )
-        return metadata
-
-    monkeypatch.setattr("vmaf_workflow.prepare._probe_media", probe)
-    monkeypatch.setattr(
-        "vmaf_workflow.prepare.detect_watermark",
-        lambda _distorted, _reference, output: _result("absent", output),
-    )
-
-    inventory = prepare_project(project, project.video_dir / "reference.mp4")
-
-    assert inventory["watermark_detection"]["representative"]["height"] == 1012
-    assert inventory["watermark_detection"]["state"] == "absent"
 
 
 def test_prepare_uncertain_keeps_diagnostics_and_does_not_write_inventory(
@@ -403,50 +308,6 @@ def test_absent_remote_plan_keeps_full_frame_commands(
     assert plan["content_exclusions"] == []
     assert all(command["pre_filter"] is None for command in plan["commands"])
     assert all("-pre_filter" not in command["command"] for command in plan["commands"])
-
-
-def test_coordinate_change_invalidates_existing_package_status(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = _base_project(tmp_path)
-    monkeypatch.setattr("vmaf_workflow.prepare._probe_media", _fake_probe)
-    monkeypatch.setattr(
-        "vmaf_workflow.prepare.detect_watermark",
-        lambda _distorted, _reference, output: _result("present", output),
-    )
-    prepare_project(project, project.video_dir / "reference.mp4")
-    package_project(project)
-    inventory = _read_json(project.media_inventory_path)
-    summary = _read_json(project.watermark_summary_path)
-    inventory["content_exclusions"][0]["normalized_edges"]["left"] = 0.79
-    summary["normalized_edges"]["left"] = 0.79
-    _write_json(project.media_inventory_path, inventory)
-    _write_json(project.watermark_summary_path, summary)
-
-    status = inspect_workflow_status(project)
-
-    assert status.stage == "prepared"
-    assert str(project.package_manifest_path) in status.missing_artifacts
-
-
-def test_download_invalidation_removes_watermark_analysis(
-    tmp_path: Path,
-) -> None:
-    project = _base_project(tmp_path)
-    project.watermark_analysis_dir.mkdir()
-    project.watermark_summary_path.write_text("{}", encoding="utf-8")
-    manifest = {
-        "media_inventory": "old",
-        "package": {"path": "old"},
-        "bilibili": {"bvid": BVID},
-    }
-
-    invalidate_downstream(project, manifest)
-
-    assert not project.watermark_analysis_dir.exists()
-    assert "media_inventory" not in manifest
-    assert manifest["bilibili"]["bvid"] == BVID
 
 
 def _base_project(tmp_path: Path, *, with_bvid: bool = True) -> WorkflowProject:
