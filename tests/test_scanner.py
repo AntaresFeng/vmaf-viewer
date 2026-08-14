@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import platform
 
@@ -86,3 +87,34 @@ def test_scan_vmaf_files_uses_natural_sort(tmp_path):
         "encode2.json",
         "encode10.json",
     ]
+
+
+def test_scan_vmaf_files_skips_dangling_symlink(tmp_path):
+    (tmp_path / "good.json").write_text("{}", encoding="utf-8")
+    try:
+        os.symlink(tmp_path / "missing.json", tmp_path / "dangling.json")
+    except OSError:
+        pytest.skip("creating symlinks requires privileges on Windows")
+
+    records = scan_vmaf_files(tmp_path)
+
+    assert [record.name for record in records] == ["good.json"]
+
+
+def test_scan_vmaf_files_walks_tree_once(tmp_path, monkeypatch):
+    for name in ["a.json", "b.csv", "c.xml"]:
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+
+    calls = []
+    original_walk = Path.walk
+
+    def counting_walk(self, *args, **kwargs):
+        calls.append(self)
+        yield from original_walk(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "walk", counting_walk)
+
+    records = scan_vmaf_files(tmp_path)
+
+    assert len(calls) == 1
+    assert len(records) == 3
